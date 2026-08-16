@@ -6,40 +6,64 @@
 
   const $=id=>document.getElementById(id);
   function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}
-  function loadJSON(key,fallback){try{return JSON.parse(localStorage.getItem(key)||'null')??fallback}catch{return fallback}}
-  function saveJSON(key,v){localStorage.setItem(key,JSON.stringify(v))}
+  const memStore={};
+  function loadJSON(key,fallback){
+    try{const raw=localStorage.getItem(key);if(raw!=null)return JSON.parse(raw)}catch(e){console.warn('localStorage read',e)}
+    return Object.prototype.hasOwnProperty.call(memStore,key)?memStore[key]:fallback;
+  }
+  function saveJSON(key,v){memStore[key]=v;try{localStorage.setItem(key,JSON.stringify(v))}catch(e){console.warn('localStorage write',e)}}
   function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
   function methodValues(m){const c={};m.continuations.forEach(x=>c[x.v]=(c[x.v]||0)+1);return Object.entries(c).sort((a,b)=>b[1]-a[1]||a[0]-b[0]).map(([v,n])=>n>1?`${v}×${n}`:v).join(', ')||'—'}
   function recordKey(r){return `${r.date}|${r.time}`}
 
-  async function fetchJSON(url){
-    const r=await fetch(url,{cache:'no-store'});
-    if(!r.ok) throw new Error(`Не удалось загрузить ${url}: HTTP ${r.status}`);
-    const text=await r.text();
-    if(/^\s*</.test(text)) throw new Error(`Вместо данных ${url} получена HTML-страница`);
-    return JSON.parse(text);
+  async function fetchJSON(url,backup){
+    const tryOne=async u=>{
+      const sep=u.includes('?')?'&':'?';
+      const r=await fetch(`${u}${sep}_v=012`,{cache:'no-store'});
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const text=await r.text();
+      if(/^\s*</.test(text)) throw new Error('получен HTML вместо JSON');
+      return JSON.parse(text);
+    };
+    try{return await tryOne(url)}catch(e){
+      if(backup){console.warn(`Основной архив ${url} не загрузился`,e);return await tryOne(backup)}
+      throw new Error(`Не удалось загрузить ${url}: ${e.message}`);
+    }
+  }
+
+  async function removeOldPwaCache(){
+    let had=false;
+    try{
+      if('serviceWorker' in navigator){
+        const regs=await navigator.serviceWorker.getRegistrations();
+        had=regs.length>0 || !!navigator.serviceWorker.controller;
+        await Promise.all(regs.map(r=>r.unregister().catch(()=>false)));
+      }
+      if('caches' in window){
+        const keys=await caches.keys();
+        if(keys.some(k=>k.startsWith('keno4m-')))had=true;
+        await Promise.all(keys.filter(k=>k.startsWith('keno4m-')).map(k=>caches.delete(k)));
+      }
+    }catch(e){console.warn('Очистка старого PWA-кэша',e)}
+    return had;
   }
 
   async function forceUpdate(){
     const b=$('forceUpdate');
     if(b){b.disabled=true;b.textContent='⟳ Обновляю…';}
-    try{
-      if('serviceWorker' in navigator){
-        const regs=await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(r=>r.update().catch(()=>{})));
-      }
-      if('caches' in window){
-        const keys=await caches.keys();
-        await Promise.all(keys.filter(k=>k.startsWith('keno4m-')).map(k=>caches.delete(k)));
-      }
-    }catch(e){console.warn(e)}
-    const u=new URL(location.href);u.searchParams.set('_update',Date.now());location.replace(u.href);
+    await removeOldPwaCache();
+    const u=new URL(location.href);u.searchParams.set('_clean','1');u.searchParams.set('_update',Date.now());location.replace(u.href);
   }
 
   async function loadArchive(){
     const custom=loadJSON(LS.custom,null);
-    if(custom && Array.isArray(custom) && custom.length>2){baseMatrix=custom;customActive=true;}
-    else {const j=await fetchJSON('data/archive.json');baseMatrix=j.rows;customActive=false;}
+    const validCustom=Array.isArray(custom)&&custom.length>2&&Array.isArray(custom[0])&&String(custom[0][0])==='Дата / Время';
+    if(validCustom){baseMatrix=custom;customActive=true;}
+    else {
+      const j=await fetchJSON('data/archive.json','https://raw.githubusercontent.com/arsazet17/pozitron-keno-4m/main/data/archive.json');
+      if(!j||!Array.isArray(j.rows)||j.rows.length<3)throw new Error('Архив JSON имеет неверный формат');
+      baseMatrix=j.rows;customActive=false;
+    }
     matrix=E.cloneMatrix(baseMatrix);
     E.applyOverrides(matrix,loadJSON(LS.overrides,{}));
     $('archiveStatus').textContent=`Архив: ${matrix.length-1} дат`;$('archiveStatus').classList.remove('error');
@@ -67,7 +91,7 @@
   async function seedRecords(){
     if(getRecords().length) return;
     try{
-      const seed=await fetchJSON('data/predictions_seed.json');
+      const seed=await fetchJSON('data/predictions_seed.json','https://raw.githubusercontent.com/arsazet17/pozitron-keno-4m/main/data/predictions_seed.json');
       seed.forEach(r=>upsertRecord({...r,hitV1:r.v1.includes(r.actual),hitConsensus:r.consensus!=null&&r.consensus===r.actual}));
     }catch{}
   }
@@ -167,11 +191,20 @@
   async function init(){
     $('forceUpdate')?.addEventListener('click',forceUpdate);
     try{
+      const u=new URL(location.href);
+      if(!u.searchParams.has('_clean')){
+        const had=await removeOldPwaCache();
+        if(had){u.searchParams.set('_clean','1');u.searchParams.set('_update',Date.now());location.replace(u.href);return;}
+      }
       await loadArchive();await seedRecords();await loadXlsx();compute();
       $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{compute();toast('Пересчитано по текущему архиву')});
       $('importXlsx').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importXlsx(f)});
-      if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
-    }catch(e){console.error(e);$('archiveStatus').textContent='Ошибка архива';$('archiveStatus').classList.add('error');toast(e.message||'Ошибка запуска');}
+      // v0.1.2: Service Worker временно отключён до стабилизации запуска на телефоне.
+    }catch(e){
+      console.error(e);
+      const msg=(e&&e.message)?e.message:'Ошибка запуска';
+      $('archiveStatus').textContent=`Ошибка: ${msg}`;$('archiveStatus').classList.add('error');toast(msg);
+    }
   }
   init();
 })();
