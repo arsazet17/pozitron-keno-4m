@@ -4,7 +4,7 @@
   const LS={overrides:'keno4m.overrides.v1',records:'keno4m.records.v1',custom:'keno4m.customMatrix.v1'};
   let matrix=null, baseMatrix=null, forecast=null, xlsxWorkbook=null, xlsxSheetName=null, customActive=false;
   let archiveFingerprint='', autoRefreshBusy=false;
-  const AUTO_REFRESH_MS=60*1000;
+  const AUTO_REFRESH_MS=10*1000;
 
   const $=id=>document.getElementById(id);
   function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}
@@ -21,7 +21,7 @@
   async function fetchJSON(url,backup){
     const tryOne=async u=>{
       const sep=u.includes('?')?'&':'?';
-      const r=await fetch(`${u}${sep}_v=012`,{cache:'no-store'});
+      const r=await fetch(`${u}${sep}_v=014`,{cache:'no-store'});
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const text=await r.text();
       if(/^\s*</.test(text)) throw new Error('получен HTML вместо JSON');
@@ -84,9 +84,9 @@
 
   function startAutoRefresh(){
     // Первая тихая проверка почти сразу после запуска.
-    window.setTimeout(()=>autoRefreshArchive(false),5000);
+    window.setTimeout(()=>autoRefreshArchive(false),1000);
 
-    // Пока приложение открыто — проверяем архив раз в минуту.
+    // Пока приложение открыто — проверяем архив каждые 10 секунд.
     window.setInterval(()=>autoRefreshArchive(false),AUTO_REFRESH_MS);
 
     // После возврата из фона проверяем сразу, не ждём минуту.
@@ -94,6 +94,8 @@
       if(!document.hidden)autoRefreshArchive(true);
     });
     window.addEventListener('focus',()=>autoRefreshArchive(false));
+    window.addEventListener('pageshow',()=>autoRefreshArchive(false));
+    window.addEventListener('online',()=>autoRefreshArchive(true));
   }
 
   async function removeOldPwaCache(){
@@ -266,7 +268,7 @@
       $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{compute();toast('Пересчитано по текущему архиву')});
       $('importXlsx').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importXlsx(f)});
       startAutoRefresh();
-      // v0.1.3: экран сам проверяет свежий archive.json раз в 60 секунд
+      // v0.1.4: экран сам проверяет свежий archive.json каждые 10 секунд
       // и сразу после возврата приложения из фона.
       // Service Worker временно отключён до стабилизации запуска на телефоне.
     }catch(e){
