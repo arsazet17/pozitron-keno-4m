@@ -26,6 +26,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
+
+      - name: Взять самый свежий main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+          echo "WORKING_SHA=$(git rev-parse HEAD)"
 
       - name: Python 3.12
         uses: actions/setup-python@v5
@@ -59,4 +66,4 @@ jobs:
           git add data/last_sync.json
 
           git commit -m "KENO 4M · Столото автообновление"
-          git push
+          git push origin main
