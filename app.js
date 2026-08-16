@@ -12,20 +12,44 @@
   function methodValues(m){const c={};m.continuations.forEach(x=>c[x.v]=(c[x.v]||0)+1);return Object.entries(c).sort((a,b)=>b[1]-a[1]||a[0]-b[0]).map(([v,n])=>n>1?`${v}×${n}`:v).join(', ')||'—'}
   function recordKey(r){return `${r.date}|${r.time}`}
 
+  async function fetchJSON(url){
+    const r=await fetch(url,{cache:'no-store'});
+    if(!r.ok) throw new Error(`Не удалось загрузить ${url}: HTTP ${r.status}`);
+    const text=await r.text();
+    if(/^\s*</.test(text)) throw new Error(`Вместо данных ${url} получена HTML-страница`);
+    return JSON.parse(text);
+  }
+
+  async function forceUpdate(){
+    const b=$('forceUpdate');
+    if(b){b.disabled=true;b.textContent='⟳ Обновляю…';}
+    try{
+      if('serviceWorker' in navigator){
+        const regs=await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r=>r.update().catch(()=>{})));
+      }
+      if('caches' in window){
+        const keys=await caches.keys();
+        await Promise.all(keys.filter(k=>k.startsWith('keno4m-')).map(k=>caches.delete(k)));
+      }
+    }catch(e){console.warn(e)}
+    const u=new URL(location.href);u.searchParams.set('_update',Date.now());location.replace(u.href);
+  }
+
   async function loadArchive(){
     const custom=loadJSON(LS.custom,null);
     if(custom && Array.isArray(custom) && custom.length>2){baseMatrix=custom;customActive=true;}
-    else {const j=await fetch('data/archive.json',{cache:'no-store'}).then(r=>r.json());baseMatrix=j.rows;customActive=false;}
+    else {const j=await fetchJSON('data/archive.json');baseMatrix=j.rows;customActive=false;}
     matrix=E.cloneMatrix(baseMatrix);
     E.applyOverrides(matrix,loadJSON(LS.overrides,{}));
-    $('archiveStatus').textContent=`Архив: ${matrix.length-1} дат`;
+    $('archiveStatus').textContent=`Архив: ${matrix.length-1} дат`;$('archiveStatus').classList.remove('error');
   }
 
   async function loadXlsx(){
     if(!window.XLSX){$('exportXlsx').disabled=true;return;}
     if(customActive){return;}
     try{
-      const b=await fetch('data/keno_stolby_po_date_vremeni_16-08-2026.xlsx',{cache:'no-store'}).then(r=>r.arrayBuffer());
+      const xr=await fetch('data/keno_stolby_po_date_vremeni_16-08-2026.xlsx',{cache:'no-store'});if(!xr.ok)throw new Error(`Excel HTTP ${xr.status}`);const b=await xr.arrayBuffer();
       xlsxWorkbook=XLSX.read(b,{type:'array'});xlsxSheetName=xlsxWorkbook.SheetNames[0];
       applyOverridesToWorkbook();
     }catch(e){console.warn(e);$('exportXlsx').disabled=true;}
@@ -43,7 +67,7 @@
   async function seedRecords(){
     if(getRecords().length) return;
     try{
-      const seed=await fetch('data/predictions_seed.json').then(r=>r.json());
+      const seed=await fetchJSON('data/predictions_seed.json');
       seed.forEach(r=>upsertRecord({...r,hitV1:r.v1.includes(r.actual),hitConsensus:r.consensus!=null&&r.consensus===r.actual}));
     }catch{}
   }
@@ -141,12 +165,13 @@
   }
 
   async function init(){
+    $('forceUpdate')?.addEventListener('click',forceUpdate);
     try{
       await loadArchive();await seedRecords();await loadXlsx();compute();
       $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{compute();toast('Пересчитано по текущему архиву')});
       $('importXlsx').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importXlsx(f)});
       if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
-    }catch(e){console.error(e);$('archiveStatus').textContent='Ошибка архива';toast(e.message||'Ошибка запуска');}
+    }catch(e){console.error(e);$('archiveStatus').textContent='Ошибка архива';$('archiveStatus').classList.add('error');toast(e.message||'Ошибка запуска');}
   }
   init();
 })();
