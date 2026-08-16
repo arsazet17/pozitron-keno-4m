@@ -3,6 +3,8 @@
   const E=window.KenoEngine;
   const LS={overrides:'keno4m.overrides.v1',records:'keno4m.records.v1',custom:'keno4m.customMatrix.v1'};
   let matrix=null, baseMatrix=null, forecast=null, xlsxWorkbook=null, xlsxSheetName=null, customActive=false;
+  let archiveFingerprint='', autoRefreshBusy=false;
+  const AUTO_REFRESH_MS=60*1000;
 
   const $=id=>document.getElementById(id);
   function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}
@@ -29,6 +31,69 @@
       if(backup){console.warn(`Основной архив ${url} не загрузился`,e);return await tryOne(backup)}
       throw new Error(`Не удалось загрузить ${url}: ${e.message}`);
     }
+  }
+
+  function archiveFingerprintOf(rows){
+    if(!Array.isArray(rows))return '';
+    return JSON.stringify(rows.slice(-3));
+  }
+
+  async function autoRefreshArchive(showToast=false){
+    if(autoRefreshBusy || customActive || document.hidden)return;
+    autoRefreshBusy=true;
+    try{
+      const stamp=Date.now();
+      const j=await fetchJSON(
+        `https://raw.githubusercontent.com/arsazet17/pozitron-keno-4m/main/data/archive.json?_auto=${stamp}`,
+        `data/archive.json?_auto=${stamp}`
+      );
+      if(!j||!Array.isArray(j.rows)||j.rows.length<3)throw new Error('AUTO: архив JSON имеет неверный формат');
+
+      const freshFingerprint=archiveFingerprintOf(j.rows);
+      const currentFingerprint=archiveFingerprint || archiveFingerprintOf(baseMatrix);
+      if(freshFingerprint===currentFingerprint)return;
+
+      const oldTarget=forecast?.target ? `${forecast.target.date}|${forecast.target.time}` : '';
+
+      baseMatrix=j.rows;
+      matrix=E.cloneMatrix(baseMatrix);
+      E.applyOverrides(matrix,loadJSON(LS.overrides,{}));
+      archiveFingerprint=freshFingerprint;
+
+      $('archiveStatus').textContent=`Архив: ${matrix.length-1} дат`;
+      $('archiveStatus').classList.remove('error');
+
+      // Не оставляем в памяти старый Excel после прихода нового официального результата.
+      // При экспорте workbook будет заново собран из уже свежей matrix.
+      xlsxWorkbook=null;
+      xlsxSheetName=null;
+      if(window.XLSX && $('exportXlsx'))$('exportXlsx').disabled=false;
+
+      compute();
+
+      const newTarget=forecast?.target ? `${forecast.target.date}|${forecast.target.time}` : '';
+      if(showToast || oldTarget!==newTarget){
+        toast(`Новый тираж получен · следующий ${forecast?.target?.time||'—'}`);
+      }
+    }catch(e){
+      console.warn('KENO 4M AUTO экран: проверка архива',e);
+    }finally{
+      autoRefreshBusy=false;
+    }
+  }
+
+  function startAutoRefresh(){
+    // Первая тихая проверка почти сразу после запуска.
+    window.setTimeout(()=>autoRefreshArchive(false),5000);
+
+    // Пока приложение открыто — проверяем архив раз в минуту.
+    window.setInterval(()=>autoRefreshArchive(false),AUTO_REFRESH_MS);
+
+    // После возврата из фона проверяем сразу, не ждём минуту.
+    document.addEventListener('visibilitychange',()=>{
+      if(!document.hidden)autoRefreshArchive(true);
+    });
+    window.addEventListener('focus',()=>autoRefreshArchive(false));
   }
 
   async function removeOldPwaCache(){
@@ -66,6 +131,7 @@
     }
     matrix=E.cloneMatrix(baseMatrix);
     E.applyOverrides(matrix,loadJSON(LS.overrides,{}));
+    archiveFingerprint=archiveFingerprintOf(baseMatrix);
     $('archiveStatus').textContent=`Архив: ${matrix.length-1} дат`;$('archiveStatus').classList.remove('error');
   }
 
@@ -199,7 +265,10 @@
       await loadArchive();await seedRecords();await loadXlsx();compute();
       $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{compute();toast('Пересчитано по текущему архиву')});
       $('importXlsx').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importXlsx(f)});
-      // v0.1.2: Service Worker временно отключён до стабилизации запуска на телефоне.
+      startAutoRefresh();
+      // v0.1.3: экран сам проверяет свежий archive.json раз в 60 секунд
+      // и сразу после возврата приложения из фона.
+      // Service Worker временно отключён до стабилизации запуска на телефоне.
     }catch(e){
       console.error(e);
       const msg=(e&&e.message)?e.message:'Ошибка запуска';
