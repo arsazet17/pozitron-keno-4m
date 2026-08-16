@@ -1,0 +1,62 @@
+name: KENO 4M · Stoloto AUTO
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keno-4m-stoloto-auto
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Кто запустил
+        run: |
+          echo "EVENT=$GITHUB_EVENT_NAME"
+          echo "ACTOR=$GITHUB_ACTOR"
+          echo "RUN=$GITHUB_RUN_ID"
+
+      - name: Получить репозиторий
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Установить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install "playwright==1.54.0" "openpyxl==3.1.5"
+          python -m playwright install --with-deps chromium
+
+      - name: Столото OAuth · 3 проверки · обновить KENO 4M
+        env:
+          STOLOTO_EMAIL: ${{ secrets.STOLOTO_EMAIL }}
+          STOLOTO_PASSWORD: ${{ secrets.STOLOTO_PASSWORD }}
+        run: python scripts/keno_4m_stoloto_sync.py
+
+      - name: Сохранить безопасное обновление
+        run: |
+          if git diff --quiet -- data/archive.json data/keno_stolby_po_date_vremeni_16-08-2026.xlsx data/last_sync.json; then
+            echo "Изменений нет"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add data/archive.json
+          git add data/keno_stolby_po_date_vremeni_16-08-2026.xlsx
+          git add data/last_sync.json
+
+          git commit -m "KENO 4M · Столото автообновление"
+          git push
