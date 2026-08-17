@@ -21,7 +21,7 @@
   async function fetchJSON(url,backup){
     const tryOne=async u=>{
       const sep=u.includes('?')?'&':'?';
-      const r=await fetch(`${u}${sep}_v=017`,{cache:'no-store'});
+      const r=await fetch(`${u}${sep}_v=0110`,{cache:'no-store'});
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const text=await r.text();
       if(/^\s*</.test(text)) throw new Error('получен HTML вместо JSON');
@@ -301,54 +301,39 @@
 
 
   function renderStats(){
-    const rows=getRecords().filter(r=>r.actual!=null), latest=forecast?.target.date || matrix[matrix.length-1][0];
-    const day=rows.filter(r=>r.date===latest).sort((a,b)=>E.SCHEDULE.indexOf(b.time)-E.SCHEDULE.indexOf(a.time));
-    $('dayForecasts').textContent=day.length;
-    $('dayV1Hits').textContent=day.filter(r=>r.hitV1).length;
-    $('dayConsensus').textContent=day.filter(r=>r.consensus!=null).length;
-    $('dayConsensusHits').textContent=day.filter(r=>r.hitConsensus).length;
+    const rows=getRecords().filter(r=>r.actual!=null);
+    const latest=forecast?.target.date || matrix[matrix.length-1][0];
+    const day=rows
+      .filter(r=>r.date===latest)
+      .sort((a,b)=>E.SCHEDULE.indexOf(b.time)-E.SCHEDULE.indexOf(a.time));
 
     const dayBox=$('dayAccordion');
-    if(dayBox){
-      dayBox.innerHTML=day.map(r=>{
-        const summaryStatus=r.hitV1 ? '🔥' : '○';
-        const summaryClass=r.hitV1 ? 'is-hit' : 'is-miss';
-        const consText=r.consensus==null
-          ? '<div class="detail-line muted">Главный акцент: нет полного согласования</div>'
-          : `<div class="detail-line">Главный акцент: <b>${r.consensus}</b> <span class="${r.hitConsensus?'hit':'miss'}">${r.hitConsensus?'✓':'×'}</span></div>`;
-        const actualText=r.actual==null ? '—' : r.actual;
-        return `<details class="day-item ${summaryClass}">
-          <summary>
-            <div class="day-item-main">
-              <span class="day-draw">${formatDrawNo(r.draw)}</span>
-              <span class="day-date">${r.date}</span>
-              <span class="day-time">${r.time}</span>
-            </div>
-            <div class="day-item-right">
-              <span class="day-fire" aria-label="${r.hitV1?'Угадано':'Мимо'}">${summaryStatus}</span>
-              <span class="day-chevron">▾</span>
-            </div>
-          </summary>
-          <div class="day-item-body">
-            <div class="detail-line">Факт: <b>${actualText}</b></div>
-            <div class="detail-line">Вариант 1: <b>${r.v1.join(', ')}</b> <span class="${r.hitV1?'hit':'miss'}">${r.hitV1?'ПОПАЛ':'мимо'}</span></div>
-            <div class="detail-line">Вариант 2: <b>${r.v2??'—'}</b></div>
-            <div class="detail-line">Доп. Г/Г: <b>${r.gg??'—'}</b></div>
-            ${consText}
-          </div>
-        </details>`;
-      }).join('') || '<div class="muted small">Пока нет проверенных прогнозов за эти сутки.</div>';
-    }
+    if(!dayBox)return;
 
-    const by={};
-    rows.forEach(r=>{
-      const s=by[r.time]||(by[r.time]={time:r.time,n:0,v1:0,c:0,ch:0});
-      s.n++;
-      if(r.hitV1)s.v1++;
-      if(r.consensus!=null){s.c++;if(r.hitConsensus)s.ch++;}
-    });
-    const stats=Object.values(by).sort((a,b)=>(b.v1/b.n)-(a.v1/a.n)||b.ch-a.ch||E.SCHEDULE.indexOf(a.time)-E.SCHEDULE.indexOf(b.time));
-    $('timeStats').innerHTML=stats.map(s=>`<tr><td class="${s.n>=3&&s.v1/s.n>=.5?'hot':''}">${s.time}</td><td>${s.n}</td><td>${s.v1}</td><td>${Math.round(100*s.v1/s.n)}%</td><td>${s.c}</td><td>${s.ch}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">Статистика начнёт накапливаться после результатов.</td></tr>';
+    dayBox.innerHTML=day.map(r=>{
+      const hit=!!r.hitV1;
+      const status=hit ? '🔥' : '—';
+      const consText=r.consensus==null
+        ? '<div class="detail-line muted">Главный акцент: нет полного согласования</div>'
+        : `<div class="detail-line">Главный акцент: <b>${r.consensus}</b> <span class="${r.hitConsensus?'hit':'miss'}">${r.hitConsensus?'✓':'×'}</span></div>`;
+      const actualText=r.actual==null ? '—' : r.actual;
+      return `<details class="day-item ${hit?'is-hit':'is-miss'}">
+        <summary>
+          <span class="day-draw">${formatDrawNo(r.draw)}</span>
+          <span class="day-date">${r.date}</span>
+          <span class="day-time">${r.time}</span>
+          <span class="day-fire" aria-label="${hit?'Угадано':'Мимо'}">${status}</span>
+          <span class="day-chevron">▾</span>
+        </summary>
+        <div class="day-item-body">
+          <div class="detail-line">Факт: <b>${actualText}</b></div>
+          <div class="detail-line">Вариант 1: <b>${r.v1.join(', ')}</b> <span class="${hit?'hit':'miss'}">${hit?'ПОПАЛ':'мимо'}</span></div>
+          <div class="detail-line">Вариант 2: <b>${r.v2??'—'}</b></div>
+          <div class="detail-line">Доп. Г/Г: <b>${r.gg??'—'}</b></div>
+          ${consText}
+        </div>
+      </details>`;
+    }).join('') || '<div class="stats-empty">Пока нет завершённых прогнозов за эти сутки.</div>';
   }
 
   function applyOverridesToWorkbook(){
@@ -400,7 +385,7 @@
       $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{reconcileRecordsFromArchive();compute();toast('Пересчитано по текущему архиву')});
       $('importXlsx').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importXlsx(f)});
       startAutoRefresh();
-      // v0.1.7: экран сам проверяет свежий archive.json каждые 10 секунд
+      // v0.1.10: синхронный пакет, статистика без старых DOM-элементов
       // и сразу после возврата приложения из фона.
       // Service Worker временно отключён до стабилизации запуска на телефоне.
     }catch(e){
