@@ -21,7 +21,7 @@
   async function fetchJSON(url,backup){
     const tryOne=async u=>{
       const sep=u.includes('?')?'&':'?';
-      const r=await fetch(`${u}${sep}_v=0111`,{cache:'no-store'});
+      const r=await fetch(`${u}${sep}_v=0112`,{cache:'no-store'});
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const text=await r.text();
       if(/^\s*</.test(text)) throw new Error('получен HTML вместо JSON');
@@ -221,7 +221,14 @@
 
       const freshFingerprint=archiveFingerprintOf(j.rows);
       const currentFingerprint=archiveFingerprint || archiveFingerprintOf(baseMatrix);
-      if(freshFingerprint===currentFingerprint)return;
+      if(freshFingerprint===currentFingerprint){
+        // Даже без нового тиража повторно проверяем восстановление статистики.
+        await loadSyncMeta();
+        reconcileRecordsFromArchive();
+        backfillCompletedForecasts();
+        renderStats();
+        return;
+      }
 
       const oldTarget=forecast?.target ? `${forecast.target.date}|${forecast.target.time}` : '';
 
@@ -296,14 +303,13 @@
   }
 
   async function loadArchive(){
-    const custom=loadJSON(LS.custom,null);
-    const validCustom=Array.isArray(custom)&&custom.length>2&&Array.isArray(custom[0])&&String(custom[0][0])==='Дата / Время';
-    if(validCustom){baseMatrix=custom;customActive=true;}
-    else {
-      const j=await fetchJSON('data/archive.json','https://raw.githubusercontent.com/arsazet17/pozitron-keno-4m/main/data/archive.json');
-      if(!j||!Array.isArray(j.rows)||j.rows.length<3)throw new Error('Архив JSON имеет неверный формат');
-      baseMatrix=j.rows;customActive=false;
-    }
+    // LIVE-режим всегда стартует с официального archive.json.
+    // Старый импорт Excel не должен навсегда подменять автоархив.
+    try{localStorage.removeItem(LS.custom)}catch(e){}
+    const j=await fetchJSON('data/archive.json','https://raw.githubusercontent.com/arsazet17/pozitron-keno-4m/main/data/archive.json');
+    if(!j||!Array.isArray(j.rows)||j.rows.length<3)throw new Error('Архив JSON имеет неверный формат');
+    baseMatrix=j.rows;
+    customActive=false;
     matrix=E.cloneMatrix(baseMatrix);
     E.applyOverrides(matrix,loadJSON(LS.overrides,{}));
     archiveFingerprint=archiveFingerprintOf(baseMatrix);
@@ -384,22 +390,72 @@
 
 
   function renderStats(){
-    const rows=getRecords().filter(r=>r.actual!=null);
-    const latest=forecast?.target.date || matrix[matrix.length-1][0];
-    const day=rows
-      .filter(r=>r.date===latest)
-      .sort((a,b)=>E.SCHEDULE.indexOf(b.time)-E.SCHEDULE.indexOf(a.time));
-
     const dayBox=$('dayAccordion');
     if(!dayBox)return;
 
-    dayBox.innerHTML=day.map(r=>{
-      const hit=!!r.hitV1;
+    const latestDate=String(syncMeta?.latestOfficial?.date || forecast?.target?.date || matrix?.[matrix.length-1]?.[0] || '');
+    const completed=officialFilledSequence()
+      .filter(x=>x.date===latestDate)
+      .sort((a,b)=>E.SCHEDULE.indexOf(b.time)-E.SCHEDULE.indexOf(a.time));
+
+    const saved=getRecords();
+    const display=[];
+
+    for(const x of completed){
+      let rec=saved.find(r=>recordKey(r)===`${x.date}|${x.time}`);
+
+      // Если записи нет — восстанавливаем прогноз строго по архиву ДО тиража.
+      if(!rec || !Array.isArray(rec.v1) || !rec.v1.length){
+        try{
+          const hist=historicalForecast(x.date,x.time);
+          if(hist && Array.isArray(hist.v1) && hist.v1.length){
+            rec={...hist,restored:true};
+          }
+        }catch(e){
+          console.warn('STAT restore',x.date,x.time,e);
+        }
+      }
+
+      // Даже если прогноз по какой-то причине не восстановился,
+      // сам официальный тираж всё равно показываем — статистика не должна быть пустой.
+      rec=rec || {
+        draw:officialDrawFor(x.date,x.time),
+        date:x.date,time:x.time,
+        v1:[],v2:null,gg:null,consensus:null
+      };
+
+      rec.draw=Number.isFinite(Number(rec.draw)) ? Number(rec.draw) : officialDrawFor(x.date,x.time);
+      rec.actual=x.actual;
+      rec.hitV1=Array.isArray(rec.v1) && rec.v1.includes(x.actual);
+      rec.hitConsensus=rec.consensus!=null && rec.consensus===x.actual;
+      display.push(rec);
+    }
+
+    // Сохраняем восстановленные записи как резерв, но экран от них больше не зависит.
+    if(display.length){
+      const merged=getRecords();
+      let changed=false;
+      for(const r of display){
+        if(!Array.isArray(r.v1) || !r.v1.length)continue;
+        const k=recordKey(r),i=merged.findIndex(z=>recordKey(z)===k);
+        if(i<0){merged.push({...r});changed=true;}
+        else if(merged[i].actual==null || !Array.isArray(merged[i].v1) || !merged[i].v1.length){
+          merged[i]={...merged[i],...r};changed=true;
+        }
+      }
+      if(changed){
+        merged.sort((a,b)=>E.parseDate(a.date)-E.parseDate(b.date)||E.SCHEDULE.indexOf(a.time)-E.SCHEDULE.indexOf(b.time));
+        setRecords(merged);
+      }
+    }
+
+    dayBox.innerHTML=display.map(r=>{
+      const hasForecast=Array.isArray(r.v1) && r.v1.length;
+      const hit=hasForecast && !!r.hitV1;
       const status=hit ? '🔥' : '—';
       const consText=r.consensus==null
         ? '<div class="detail-line muted">Главный акцент: нет полного согласования</div>'
         : `<div class="detail-line">Главный акцент: <b>${r.consensus}</b> <span class="${r.hitConsensus?'hit':'miss'}">${r.hitConsensus?'✓':'×'}</span></div>`;
-      const actualText=r.actual==null ? '—' : r.actual;
       return `<details class="day-item ${hit?'is-hit':'is-miss'}">
         <summary>
           <span class="day-draw">${formatDrawNo(r.draw)}</span>
@@ -409,14 +465,14 @@
           <span class="day-chevron">▾</span>
         </summary>
         <div class="day-item-body">
-          <div class="detail-line">Факт: <b>${actualText}</b></div>
-          <div class="detail-line">Вариант 1: <b>${r.v1.join(', ')}</b> <span class="${hit?'hit':'miss'}">${hit?'ПОПАЛ':'мимо'}</span></div>
+          <div class="detail-line">Факт: <b>${r.actual}</b></div>
+          <div class="detail-line">Вариант 1: <b>${hasForecast?r.v1.join(', '):'не восстановлен'}</b>${hasForecast?` <span class="${hit?'hit':'miss'}">${hit?'ПОПАЛ':'мимо'}</span>`:''}</div>
           <div class="detail-line">Вариант 2: <b>${r.v2??'—'}</b></div>
           <div class="detail-line">Доп. Г/Г: <b>${r.gg??'—'}</b></div>
           ${consText}
         </div>
       </details>`;
-    }).join('') || '<div class="stats-empty">Пока нет завершённых прогнозов за эти сутки.</div>';
+    }).join('') || '<div class="stats-empty">Официальных завершённых тиражей за эти сутки пока нет.</div>';
   }
 
   function applyOverridesToWorkbook(){
@@ -450,7 +506,7 @@
       try{
         const wb=XLSX.read(fr.result,{type:'array'}),sn=wb.SheetNames[0],arr=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});
         if(!arr.length||String(arr[0][0])!=='Дата / Время')throw new Error('Неверный формат');
-        xlsxWorkbook=wb;xlsxSheetName=sn;baseMatrix=arr;customActive=true;saveJSON(LS.custom,arr);matrix=E.cloneMatrix(arr);E.applyOverrides(matrix,loadJSON(LS.overrides,{}));
+        xlsxWorkbook=wb;xlsxSheetName=sn;baseMatrix=arr;customActive=true;matrix=E.cloneMatrix(arr);E.applyOverrides(matrix,loadJSON(LS.overrides,{}));
         $('archiveStatus').textContent=`Архив: ${matrix.length-1} дат`;compute();toast('Excel загружен и принят как рабочий архив');
       }catch(e){console.error(e);toast('Не удалось прочитать Excel');}
     };fr.readAsArrayBuffer(file);
@@ -468,7 +524,7 @@
       $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{reconcileRecordsFromArchive();backfillCompletedForecasts();compute();toast('Пересчитано по текущему архиву')});
       $('importXlsx').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importXlsx(f)});
       startAutoRefresh();
-      // v0.1.11: статистика восстанавливает потерянные прогнозы по историческому срезу
+      // v0.1.12: статистика строится прямо из официального архива и не зависит от localStorage
       // и сразу после возврата приложения из фона.
       // Service Worker временно отключён до стабилизации запуска на телефоне.
     }catch(e){
