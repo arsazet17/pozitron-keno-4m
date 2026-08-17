@@ -21,7 +21,7 @@
   async function fetchJSON(url,backup){
     const tryOne=async u=>{
       const sep=u.includes('?')?'&':'?';
-      const r=await fetch(`${u}${sep}_v=016`,{cache:'no-store'});
+      const r=await fetch(`${u}${sep}_v=017`,{cache:'no-store'});
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const text=await r.text();
       if(/^\s*</.test(text)) throw new Error('получен HTML вместо JSON');
@@ -52,6 +52,73 @@
   function formatDrawNo(n){
     const v=Number(n);
     return Number.isFinite(v) ? `№${v}` : '№—';
+  }
+
+
+  function matrixActual(date,time){
+    if(!matrix)return null;
+    const hm=E.headerMap(matrix), c=hm[time];
+    if(c==null)return null;
+    const r=matrix.findIndex((row,i)=>i>0 && String(row?.[0])===String(date));
+    if(r<1)return null;
+    return E.val(matrix[r][c]);
+  }
+
+  function officialFilledSequence(){
+    if(!matrix)return [];
+    const latest=syncMeta?.latestOfficial;
+    const latestDate=latest?.date, latestTime=latest?.time;
+    const latestDateObj=E.parseDate(latestDate);
+    if(!latestDateObj || !latestTime)return [];
+
+    const out=[];
+    const hm=E.headerMap(matrix);
+    for(let r=1;r<matrix.length;r++){
+      const date=String(matrix[r]?.[0]||'');
+      const d=E.parseDate(date);
+      if(!d || d>latestDateObj)continue;
+      for(const time of E.SCHEDULE){
+        const c=hm[time];
+        if(c==null)continue;
+        if(d.getTime()===latestDateObj.getTime() && E.SCHEDULE.indexOf(time)>E.SCHEDULE.indexOf(latestTime))break;
+        const actual=E.val(matrix[r][c]);
+        if(actual!=null)out.push({date,time,actual});
+      }
+    }
+    return out;
+  }
+
+  function officialDrawFor(date,time){
+    const latest=syncMeta?.latestOfficial;
+    const latestDraw=Number(latest?.draw);
+    if(!Number.isFinite(latestDraw))return null;
+
+    const seq=officialFilledSequence();
+    if(!seq.length)return null;
+    const latestIndex=seq.findIndex(x=>x.date===String(latest.date)&&x.time===String(latest.time));
+    const targetIndex=seq.findIndex(x=>x.date===String(date)&&x.time===String(time));
+    if(latestIndex<0 || targetIndex<0 || targetIndex>latestIndex)return null;
+    return latestDraw-(latestIndex-targetIndex);
+  }
+
+  function reconcileRecordsFromArchive(){
+    const rows=getRecords();
+    let changed=false;
+    for(const r of rows){
+      const actual=matrixActual(r.date,r.time);
+      if(actual!=null && r.actual==null){
+        r.actual=actual;
+        r.hitV1=Array.isArray(r.v1) && r.v1.includes(actual);
+        r.hitConsensus=r.consensus!=null && r.consensus===actual;
+        changed=true;
+      }
+      if(r.actual!=null && !Number.isFinite(Number(r.draw))){
+        const draw=officialDrawFor(r.date,r.time);
+        if(draw!=null){r.draw=draw;changed=true;}
+      }
+    }
+    if(changed)setRecords(rows);
+    return changed;
   }
 
   function archiveFingerprintOf(rows){
@@ -91,6 +158,7 @@
       if(window.XLSX && $('exportXlsx'))$('exportXlsx').disabled=false;
 
       await loadSyncMeta();
+      reconcileRecordsFromArchive();
       compute();
 
       const newTarget=forecast?.target ? `${forecast.target.date}|${forecast.target.time}` : '';
@@ -328,11 +396,11 @@
         const had=await removeOldPwaCache();
         if(had){u.searchParams.set('_clean','1');u.searchParams.set('_update',Date.now());location.replace(u.href);return;}
       }
-      await loadArchive();await seedRecords();await loadSyncMeta();await loadXlsx();compute();
-      $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{compute();toast('Пересчитано по текущему архиву')});
+      await loadArchive();await seedRecords();await loadSyncMeta();reconcileRecordsFromArchive();await loadXlsx();compute();
+      $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{reconcileRecordsFromArchive();compute();toast('Пересчитано по текущему архиву')});
       $('importXlsx').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importXlsx(f)});
       startAutoRefresh();
-      // v0.1.6: экран сам проверяет свежий archive.json каждые 10 секунд
+      // v0.1.7: экран сам проверяет свежий archive.json каждые 10 секунд
       // и сразу после возврата приложения из фона.
       // Service Worker временно отключён до стабилизации запуска на телефоне.
     }catch(e){
