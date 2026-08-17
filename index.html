@@ -10,13 +10,13 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=016">
+  <link rel="stylesheet" href="style.css?v=019">
 </head>
 <body>
 <div class="shell">
   <header class="topbar">
     <div class="brand"><img src="icons/icon-192.png" alt=""><div><b>KENO 4M</b><span>4 метода · столбы 1–10</span></div></div>
-    <div class="top-actions"><div id="archiveStatus" class="status">Загрузка архива…</div><button id="forceUpdate" class="update-btn" type="button">⟳ Обновить</button></div>
+    <div class="top-actions"><div class="top-meta"><div id="appVersionTop" class="version-badge">v0.1.9</div><div id="archiveStatus" class="status">Загрузка архива…</div></div><button id="forceUpdate" class="update-btn" type="button">⟳ Обновить</button></div>
   </header>
 
   <main id="pages" class="pages">
@@ -48,9 +48,13 @@
     </section>
 
     <section class="page" data-page="stats">
-      <div class="page-head"><div><div class="eyebrow">Накопление по фактам</div><h1>Статистика</h1></div></div>
-      <section class="card"><h2>Промежуточный итог за сутки</h2><div class="kpis"><div class="kpi"><div id="dayForecasts" class="n">0</div><div class="l">проверено В1</div></div><div class="kpi"><div id="dayV1Hits" class="n">0</div><div class="l">попаданий В1</div></div><div class="kpi"><div id="dayConsensus" class="n">0</div><div class="l">консенсусов</div></div><div class="kpi"><div id="dayConsensusHits" class="n">0</div><div class="l">попаданий консенсуса</div></div></div><div id="dayAccordion" class="day-accordion"></div></section>
-      <section class="card"><div class="title-row"><h2>По времени тиража</h2><span class="small muted">ищем сильные времена</span></div><div class="table-wrap"><table><thead><tr><th>Время</th><th>Проверок</th><th>В1 попад.</th><th>В1 %</th><th>Соглас.</th><th>Попад.</th></tr></thead><tbody id="timeStats"></tbody></table></div><div class="note">Процент — накопленная статистика наших прогнозов, а не гарантия результата.</div></section>
+      <div class="page-head"><div><div class="eyebrow">По фактам Столото</div><h1>Статистика</h1></div></div>
+      <section class="card stats-simple-card">
+        <div class="stats-simple-head">
+          <span>ТИРАЖ</span><span>ДАТА</span><span>ВРЕМЯ</span><span>ИТОГ</span><span></span>
+        </div>
+        <div id="dayAccordion" class="day-accordion"></div>
+      </section>
     </section>
 
     <section class="page" data-page="archive">
@@ -61,7 +65,7 @@
     </section>
 
     <section class="page" data-page="settings">
-      <div class="page-head"><div><div class="eyebrow">Приложение</div><h1>Настройки</h1></div><span class="pill">v0.1.7</span></div>
+      <div class="page-head"><div><div class="eyebrow">Приложение</div><h1>Настройки</h1></div><span class="pill">v0.1.9</span></div>
       <section class="card about"><img src="icons/icon-192.png" alt=""><div><h2>KENO 4M</h2><p class="muted">Основной прогноз — Вариант 1. Вариант 2 и Доп. Г/Г служат для поиска полного согласования.</p></div></section>
       <section class="card"><h2>Навигация</h2><p class="muted">Переход между страницами работает только нижними кнопками. Свайп между страницами отключён.</p></section>
       <section class="card"><h2>Текущее расписание</h2><div id="scheduleList" class="chips"></div></section>
@@ -80,6 +84,6 @@
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="engine.js?v=012"></script>
 <script src="today-override.js?v=015"></script>
-<script src="app.js?v=017"></script>
+<script src="app.js?v=018"></script>
 <script src="navigation.js?v=016"></script>
 </body></html>
