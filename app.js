@@ -3,7 +3,7 @@
   const E=window.KenoEngine;
   const LS={overrides:'keno4m.overrides.v1',records:'keno4m.records.v1',custom:'keno4m.customMatrix.v1'};
   let matrix=null, baseMatrix=null, forecast=null, xlsxWorkbook=null, xlsxSheetName=null, customActive=false;
-  let archiveFingerprint='', autoRefreshBusy=false;
+  let archiveFingerprint='', autoRefreshBusy=false, syncMeta=null;
   const AUTO_REFRESH_MS=10*1000;
 
   const $=id=>document.getElementById(id);
@@ -21,7 +21,7 @@
   async function fetchJSON(url,backup){
     const tryOne=async u=>{
       const sep=u.includes('?')?'&':'?';
-      const r=await fetch(`${u}${sep}_v=014`,{cache:'no-store'});
+      const r=await fetch(`${u}${sep}_v=016`,{cache:'no-store'});
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const text=await r.text();
       if(/^\s*</.test(text)) throw new Error('получен HTML вместо JSON');
@@ -31,6 +31,27 @@
       if(backup){console.warn(`Основной архив ${url} не загрузился`,e);return await tryOne(backup)}
       throw new Error(`Не удалось загрузить ${url}: ${e.message}`);
     }
+  }
+
+
+  async function loadSyncMeta(){
+    try{
+      syncMeta=await fetchJSON('data/last_sync.json','https://raw.githubusercontent.com/arsazet17/pozitron-keno-4m/main/data/last_sync.json');
+    }catch(e){
+      console.warn('last_sync.json не загрузился',e);
+      syncMeta=null;
+    }
+  }
+
+  function nextDrawNumber(){
+    const raw=syncMeta?.latestOfficial?.draw;
+    const n=Number(raw);
+    return Number.isFinite(n) ? n+1 : null;
+  }
+
+  function formatDrawNo(n){
+    const v=Number(n);
+    return Number.isFinite(v) ? `№${v}` : '№—';
   }
 
   function archiveFingerprintOf(rows){
@@ -69,6 +90,7 @@
       xlsxSheetName=null;
       if(window.XLSX && $('exportXlsx'))$('exportXlsx').disabled=false;
 
+      await loadSyncMeta();
       compute();
 
       const newTarget=forecast?.target ? `${forecast.target.date}|${forecast.target.time}` : '';
@@ -167,13 +189,15 @@
   function compute(){
     const target=E.nextTarget(matrix);
     forecast=E.predict(matrix,target);
-    upsertRecord({date:target.date,time:target.time,v1:forecast.v1.values,v2:forecast.v2.value,gg:forecast.gg.value,consensus:forecast.consensus,actual:null});
+    forecast.targetDraw=nextDrawNumber();
+    upsertRecord({draw:forecast.targetDraw,date:target.date,time:target.time,v1:forecast.v1.values,v2:forecast.v2.value,gg:forecast.gg.value,consensus:forecast.consensus,actual:null});
     renderForecast();renderResultSelector();renderStats();
   }
 
   function renderForecast(){
     const f=forecast,t=f.target;
     $('targetTime').textContent=t.time;$('targetDate').textContent=t.date;
+    const drawBox=$('targetDraw'); if(drawBox) drawBox.textContent=`Тираж ${formatDrawNo(f.targetDraw)}`;
     $('v1Balls').innerHTML=f.v1.values.map(n=>`<div class="ball">${n}</div>`).join('');
     $('v2Value').textContent=f.v2.value??'—';$('ggValue').textContent=f.gg.value??'—';
     $('vChain').textContent=f.vChain.join('–');$('hChain').textContent=f.hChain.join('–');
@@ -200,21 +224,61 @@
     if(!forecast)return;
     const n=E.val($('resultValue').value);if(n==null){toast('Введите столб от 1 до 10');return;}
     const {date,time}=forecast.target;
-    const rec=getRecords().find(r=>r.date===date&&r.time===time) || {date,time,v1:forecast.v1.values,v2:forecast.v2.value,gg:forecast.gg.value,consensus:forecast.consensus};
+    const rec=getRecords().find(r=>r.date===date&&r.time===time) || {draw:forecast.targetDraw,date,time,v1:forecast.v1.values,v2:forecast.v2.value,gg:forecast.gg.value,consensus:forecast.consensus};
     rec.actual=n;rec.hitV1=rec.v1.includes(n);rec.hitConsensus=rec.consensus!=null&&rec.consensus===n;upsertRecord(rec);
     updateMatrixCell(date,time,n);updateWorkbookCell(date,time,n);
-    $('lastCheck').innerHTML=`${date} ${time} → столб <b>${n}</b>. Основной В1: <span class="${rec.hitV1?'hit':'miss'}">${rec.hitV1?'ПОПАЛ':'мимо'}</span>${rec.consensus!=null?`; согласованный ${rec.consensus}: <span class="${rec.hitConsensus?'hit':'miss'}">${rec.hitConsensus?'ПОПАЛ':'мимо'}</span>`:''}.`;
+    $('lastCheck').innerHTML=`${formatDrawNo(rec.draw)} · ${date} ${time} → столб <b>${n}</b>. Основной В1: <span class="${rec.hitV1?'hit':'miss'}">${rec.hitV1?'ПОПАЛ':'мимо'}</span>${rec.consensus!=null?`; согласованный ${rec.consensus}: <span class="${rec.hitConsensus?'hit':'miss'}">${rec.hitConsensus?'ПОПАЛ':'мимо'}</span>`:''}.`;
     toast(`Зафиксировано: ${time} → ${n}`);compute();
   }
 
+
   function renderStats(){
     const rows=getRecords().filter(r=>r.actual!=null), latest=forecast?.target.date || matrix[matrix.length-1][0];
-    const day=rows.filter(r=>r.date===latest);
-    $('dayForecasts').textContent=day.length;$('dayV1Hits').textContent=day.filter(r=>r.hitV1).length;
-    $('dayConsensus').textContent=day.filter(r=>r.consensus!=null).length;$('dayConsensusHits').textContent=day.filter(r=>r.hitConsensus).length;
-    $('dayRows').innerHTML=day.map(r=>`<tr><td>${r.time}</td><td>${r.v1.join(', ')}</td><td>${r.actual}</td><td class="${r.hitV1?'hit':'miss'}">${r.hitV1?'✓':'—'}</td><td class="${r.consensus==null?'muted':r.hitConsensus?'hit':'miss'}">${r.consensus==null?'—':`${r.consensus} ${r.hitConsensus?'✓':'×'}`}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">Пока нет проверенных прогнозов за эти сутки.</td></tr>';
+    const day=rows.filter(r=>r.date===latest).sort((a,b)=>E.SCHEDULE.indexOf(b.time)-E.SCHEDULE.indexOf(a.time));
+    $('dayForecasts').textContent=day.length;
+    $('dayV1Hits').textContent=day.filter(r=>r.hitV1).length;
+    $('dayConsensus').textContent=day.filter(r=>r.consensus!=null).length;
+    $('dayConsensusHits').textContent=day.filter(r=>r.hitConsensus).length;
+
+    const dayBox=$('dayAccordion');
+    if(dayBox){
+      dayBox.innerHTML=day.map(r=>{
+        const summaryStatus=r.hitV1 ? '🔥' : '○';
+        const summaryClass=r.hitV1 ? 'is-hit' : 'is-miss';
+        const consText=r.consensus==null
+          ? '<div class="detail-line muted">Главный акцент: нет полного согласования</div>'
+          : `<div class="detail-line">Главный акцент: <b>${r.consensus}</b> <span class="${r.hitConsensus?'hit':'miss'}">${r.hitConsensus?'✓':'×'}</span></div>`;
+        const actualText=r.actual==null ? '—' : r.actual;
+        return `<details class="day-item ${summaryClass}">
+          <summary>
+            <div class="day-item-main">
+              <span class="day-draw">${formatDrawNo(r.draw)}</span>
+              <span class="day-date">${r.date}</span>
+              <span class="day-time">${r.time}</span>
+            </div>
+            <div class="day-item-right">
+              <span class="day-fire" aria-label="${r.hitV1?'Угадано':'Мимо'}">${summaryStatus}</span>
+              <span class="day-chevron">▾</span>
+            </div>
+          </summary>
+          <div class="day-item-body">
+            <div class="detail-line">Факт: <b>${actualText}</b></div>
+            <div class="detail-line">Вариант 1: <b>${r.v1.join(', ')}</b> <span class="${r.hitV1?'hit':'miss'}">${r.hitV1?'ПОПАЛ':'мимо'}</span></div>
+            <div class="detail-line">Вариант 2: <b>${r.v2??'—'}</b></div>
+            <div class="detail-line">Доп. Г/Г: <b>${r.gg??'—'}</b></div>
+            ${consText}
+          </div>
+        </details>`;
+      }).join('') || '<div class="muted small">Пока нет проверенных прогнозов за эти сутки.</div>';
+    }
+
     const by={};
-    rows.forEach(r=>{const s=by[r.time]||(by[r.time]={time:r.time,n:0,v1:0,c:0,ch:0});s.n++;if(r.hitV1)s.v1++;if(r.consensus!=null){s.c++;if(r.hitConsensus)s.ch++;}});
+    rows.forEach(r=>{
+      const s=by[r.time]||(by[r.time]={time:r.time,n:0,v1:0,c:0,ch:0});
+      s.n++;
+      if(r.hitV1)s.v1++;
+      if(r.consensus!=null){s.c++;if(r.hitConsensus)s.ch++;}
+    });
     const stats=Object.values(by).sort((a,b)=>(b.v1/b.n)-(a.v1/a.n)||b.ch-a.ch||E.SCHEDULE.indexOf(a.time)-E.SCHEDULE.indexOf(b.time));
     $('timeStats').innerHTML=stats.map(s=>`<tr><td class="${s.n>=3&&s.v1/s.n>=.5?'hot':''}">${s.time}</td><td>${s.n}</td><td>${s.v1}</td><td>${Math.round(100*s.v1/s.n)}%</td><td>${s.c}</td><td>${s.ch}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">Статистика начнёт накапливаться после результатов.</td></tr>';
   }
@@ -264,11 +328,11 @@
         const had=await removeOldPwaCache();
         if(had){u.searchParams.set('_clean','1');u.searchParams.set('_update',Date.now());location.replace(u.href);return;}
       }
-      await loadArchive();await seedRecords();await loadXlsx();compute();
+      await loadArchive();await seedRecords();await loadSyncMeta();await loadXlsx();compute();
       $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{compute();toast('Пересчитано по текущему архиву')});
       $('importXlsx').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importXlsx(f)});
       startAutoRefresh();
-      // v0.1.4: экран сам проверяет свежий archive.json каждые 10 секунд
+      // v0.1.6: экран сам проверяет свежий archive.json каждые 10 секунд
       // и сразу после возврата приложения из фона.
       // Service Worker временно отключён до стабилизации запуска на телефоне.
     }catch(e){

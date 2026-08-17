@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=012">
+  <link rel="stylesheet" href="style.css?v=016">
 </head>
 <body>
 <div class="shell">
@@ -22,7 +22,7 @@
   <main id="pages" class="pages">
     <section class="page active" data-page="home">
       <section class="hero card">
-        <div><div class="eyebrow">Следующий тираж</div><div id="targetTime" class="time">—</div><div id="targetDate" class="muted">—</div></div>
+        <div><div class="eyebrow">Следующий тираж</div><div id="targetTime" class="time">—</div><div id="targetDate" class="muted">—</div><div id="targetDraw" class="draw-no">Тираж №—</div></div>
         <button id="recalc" class="ghost">↻ Пересчитать</button>
       </section>
 
@@ -49,7 +49,7 @@
 
     <section class="page" data-page="stats">
       <div class="page-head"><div><div class="eyebrow">Накопление по фактам</div><h1>Статистика</h1></div></div>
-      <section class="card"><h2>Промежуточный итог за сутки</h2><div class="kpis"><div class="kpi"><div id="dayForecasts" class="n">0</div><div class="l">проверено В1</div></div><div class="kpi"><div id="dayV1Hits" class="n">0</div><div class="l">попаданий В1</div></div><div class="kpi"><div id="dayConsensus" class="n">0</div><div class="l">консенсусов</div></div><div class="kpi"><div id="dayConsensusHits" class="n">0</div><div class="l">попаданий консенсуса</div></div></div><div class="table-wrap"><table><thead><tr><th>Время</th><th>В1</th><th>Факт</th><th>В1</th><th>Соглас.</th></tr></thead><tbody id="dayRows"></tbody></table></div></section>
+      <section class="card"><h2>Промежуточный итог за сутки</h2><div class="kpis"><div class="kpi"><div id="dayForecasts" class="n">0</div><div class="l">проверено В1</div></div><div class="kpi"><div id="dayV1Hits" class="n">0</div><div class="l">попаданий В1</div></div><div class="kpi"><div id="dayConsensus" class="n">0</div><div class="l">консенсусов</div></div><div class="kpi"><div id="dayConsensusHits" class="n">0</div><div class="l">попаданий консенсуса</div></div></div><div id="dayAccordion" class="day-accordion"></div></section>
       <section class="card"><div class="title-row"><h2>По времени тиража</h2><span class="small muted">ищем сильные времена</span></div><div class="table-wrap"><table><thead><tr><th>Время</th><th>Проверок</th><th>В1 попад.</th><th>В1 %</th><th>Соглас.</th><th>Попад.</th></tr></thead><tbody id="timeStats"></tbody></table></div><div class="note">Процент — накопленная статистика наших прогнозов, а не гарантия результата.</div></section>
     </section>
 
@@ -61,9 +61,9 @@
     </section>
 
     <section class="page" data-page="settings">
-      <div class="page-head"><div><div class="eyebrow">Приложение</div><h1>Настройки</h1></div><span class="pill">v0.1.5</span></div>
+      <div class="page-head"><div><div class="eyebrow">Приложение</div><h1>Настройки</h1></div><span class="pill">v0.1.6</span></div>
       <section class="card about"><img src="icons/icon-192.png" alt=""><div><h2>KENO 4M</h2><p class="muted">Основной прогноз — Вариант 1. Вариант 2 и Доп. Г/Г служат для поиска полного согласования.</p></div></section>
-      <section class="card"><h2>Навигация</h2><p class="muted">Переход между страницами работает двумя способами: кнопками снизу и свайпом влево/вправо.</p></section>
+      <section class="card"><h2>Навигация</h2><p class="muted">Переход между страницами работает только нижними кнопками. Свайп между страницами отключён.</p></section>
       <section class="card"><h2>Текущее расписание</h2><div id="scheduleList" class="chips"></div></section>
       <section class="card"><h2>Установка</h2><p class="muted">После публикации GitHub Pages приложение можно установить на главный экран телефона как PWA.</p></section>
     </section>
@@ -80,6 +80,6 @@
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="engine.js?v=012"></script>
 <script src="today-override.js?v=015"></script>
-<script src="app.js?v=014"></script>
-<script src="navigation.js?v=012"></script>
+<script src="app.js?v=016"></script>
+<script src="navigation.js?v=016"></script>
 </body></html>
