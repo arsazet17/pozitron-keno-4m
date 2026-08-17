@@ -21,7 +21,7 @@
   async function fetchJSON(url,backup){
     const tryOne=async u=>{
       const sep=u.includes('?')?'&':'?';
-      const r=await fetch(`${u}${sep}_v=0110`,{cache:'no-store'});
+      const r=await fetch(`${u}${sep}_v=0111`,{cache:'no-store'});
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const text=await r.text();
       if(/^\s*</.test(text)) throw new Error('получен HTML вместо JSON');
@@ -121,6 +121,88 @@
     return changed;
   }
 
+
+  function historicalForecast(date,time){
+    if(!matrix)return null;
+    const hm=E.headerMap(matrix);
+    const col=hm[time];
+    const row=matrix.findIndex((r,i)=>i>0 && String(r?.[0])===String(date));
+    if(row<1 || col==null)return null;
+
+    // Восстанавливаем состояние архива РОВНО перед этим тиражом:
+    // удаляем все более поздние даты и все значения этого дня начиная с target.
+    const snap=E.cloneMatrix(matrix.slice(0,row+1));
+    for(let c=col;c<snap[row].length;c++) snap[row][c]=null;
+
+    const target={row,date:String(date),time:String(time),col};
+    const f=E.predict(snap,target);
+    return {
+      draw:officialDrawFor(date,time),
+      date:String(date),
+      time:String(time),
+      v1:f.v1.values,
+      v2:f.v2.value,
+      gg:f.gg.value,
+      consensus:f.consensus
+    };
+  }
+
+  function backfillCompletedForecasts(){
+    if(!matrix || !syncMeta?.latestOfficial?.date)return false;
+
+    const latestDate=String(syncMeta.latestOfficial.date);
+    const completed=officialFilledSequence().filter(x=>x.date===latestDate);
+    if(!completed.length)return false;
+
+    const rows=getRecords();
+    let changed=false;
+
+    for(const x of completed){
+      const k=`${x.date}|${x.time}`;
+      let rec=rows.find(r=>recordKey(r)===k);
+
+      // Если прогноз был сохранён раньше — только дополняем официальный факт.
+      if(rec && Array.isArray(rec.v1) && rec.v1.length){
+        const hitV1=rec.v1.includes(x.actual);
+        const hitConsensus=rec.consensus!=null && rec.consensus===x.actual;
+        const draw=Number.isFinite(Number(rec.draw)) ? rec.draw : officialDrawFor(x.date,x.time);
+
+        if(rec.actual!==x.actual || rec.hitV1!==hitV1 || rec.hitConsensus!==hitConsensus || rec.draw!==draw){
+          rec.actual=x.actual;
+          rec.hitV1=hitV1;
+          rec.hitConsensus=hitConsensus;
+          rec.draw=draw;
+          changed=true;
+        }
+        continue;
+      }
+
+      // Если локальная запись прогноза потерялась — пересчитываем прогноз
+      // на историческом срезе ДО этого тиража и создаём запись заново.
+      try{
+        const hist=historicalForecast(x.date,x.time);
+        if(!hist || !Array.isArray(hist.v1) || !hist.v1.length)continue;
+        rec={
+          ...hist,
+          actual:x.actual,
+          hitV1:hist.v1.includes(x.actual),
+          hitConsensus:hist.consensus!=null && hist.consensus===x.actual,
+          restored:true
+        };
+        rows.push(rec);
+        changed=true;
+      }catch(e){
+        console.warn('Не удалось восстановить прогноз',x.date,x.time,e);
+      }
+    }
+
+    if(changed){
+      rows.sort((a,b)=>E.parseDate(a.date)-E.parseDate(b.date)||E.SCHEDULE.indexOf(a.time)-E.SCHEDULE.indexOf(b.time));
+      setRecords(rows);
+    }
+    return changed;
+  }
+
   function archiveFingerprintOf(rows){
     if(!Array.isArray(rows))return '';
     return JSON.stringify(rows.slice(-3));
@@ -159,6 +241,7 @@
 
       await loadSyncMeta();
       reconcileRecordsFromArchive();
+      backfillCompletedForecasts();
       compute();
 
       const newTarget=forecast?.target ? `${forecast.target.date}|${forecast.target.time}` : '';
@@ -381,11 +464,11 @@
         const had=await removeOldPwaCache();
         if(had){u.searchParams.set('_clean','1');u.searchParams.set('_update',Date.now());location.replace(u.href);return;}
       }
-      await loadArchive();await seedRecords();await loadSyncMeta();reconcileRecordsFromArchive();await loadXlsx();compute();
-      $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{reconcileRecordsFromArchive();compute();toast('Пересчитано по текущему архиву')});
+      await loadArchive();await seedRecords();await loadSyncMeta();reconcileRecordsFromArchive();backfillCompletedForecasts();await loadXlsx();compute();
+      $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{reconcileRecordsFromArchive();backfillCompletedForecasts();compute();toast('Пересчитано по текущему архиву')});
       $('importXlsx').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importXlsx(f)});
       startAutoRefresh();
-      // v0.1.10: синхронный пакет, статистика без старых DOM-элементов
+      // v0.1.11: статистика восстанавливает потерянные прогнозы по историческому срезу
       // и сразу после возврата приложения из фона.
       // Service Worker временно отключён до стабилизации запуска на телефоне.
     }catch(e){
