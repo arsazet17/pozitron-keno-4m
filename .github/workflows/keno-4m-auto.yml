@@ -51,9 +51,12 @@ jobs:
           STOLOTO_PASSWORD: ${{ secrets.STOLOTO_PASSWORD }}
         run: python scripts/keno_4m_stoloto_sync.py
 
+      - name: Пересчитать временную статистику
+        run: python scripts/build_time_stats.py
+
       - name: Сохранить безопасное обновление
         run: |
-          if git diff --quiet -- data/archive.json data/keno_stolby_po_date_vremeni_16-08-2026.xlsx data/last_sync.json; then
+          if git diff --quiet -- data/archive.json data/keno_stolby_po_date_vremeni_16-08-2026.xlsx data/last_sync.json data/time_stats.json; then
             echo "Изменений нет"
             exit 0
           fi
@@ -64,6 +67,7 @@ jobs:
           git add data/archive.json
           git add data/keno_stolby_po_date_vremeni_16-08-2026.xlsx
           git add data/last_sync.json
+          git add data/time_stats.json
 
           git commit -m "KENO 4M · Столото автообновление"
           git push origin main
