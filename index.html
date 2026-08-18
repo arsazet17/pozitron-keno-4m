@@ -11,12 +11,13 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="style.css?v=0110">
+  <link rel="stylesheet" href="scanner.css?v=0113">
 </head>
 <body>
 <div class="shell">
   <header class="topbar">
     <div class="brand"><img src="icons/icon-192.png" alt=""><div><b>KENO 4M</b><span>4 метода · столбы 1–10</span></div></div>
-    <div class="top-actions"><div class="top-meta"><div id="appVersionTop" class="version-badge">v0.1.12</div><div id="archiveStatus" class="status">Загрузка архива…</div></div><button id="forceUpdate" class="update-btn" type="button">⟳ Обновить</button></div>
+    <div class="top-actions"><div class="top-meta"><div id="appVersionTop" class="version-badge">v0.1.13</div><div id="archiveStatus" class="status">Загрузка архива…</div></div><button id="forceUpdate" class="update-btn" type="button">⟳ Обновить</button></div>
   </header>
 
   <main id="pages" class="pages">
@@ -37,6 +38,17 @@
         <section class="card mini"><div class="eyebrow">Вариант 2</div><div id="v2Value" class="big-number">—</div><div class="small muted">общая частота</div></section>
         <section class="card mini purple"><div class="eyebrow">Доп. Г/Г</div><div id="ggValue" class="big-number">—</div><div class="small muted">горизонталь → горизонталь</div></section>
       </div>
+
+      <section class="card scanner-card">
+        <div class="title-row"><div><div class="eyebrow">Контроль прогноза</div><h2>🔎 Сканер столбов</h2></div><span class="pill cyan">ТОЛЬКО ПРОГНОЗ</span></div>
+        <div id="forecastScanner"><div class="scanner-empty">Ожидаю расчёт прогноза…</div></div>
+      </section>
+
+      <section class="card time-card">
+        <div class="title-row"><div><div class="eyebrow gold">История попаданий</div><h2>⏱ Рекомендация по времени</h2></div><span class="pill">3 сигнала</span></div>
+        <div id="timeAdvice" class="time-advice-list"><div class="scanner-empty">Загрузка временной статистики…</div></div>
+        <div id="timeStatsMeta" class="small muted time-stats-meta"></div>
+      </section>
 
       <section class="card">
         <div class="title-row"><h2>Новые цепочки</h2><span class="pill cyan">6 значений</span></div>
@@ -65,8 +77,9 @@
     </section>
 
     <section class="page" data-page="settings">
-      <div class="page-head"><div><div class="eyebrow">Приложение</div><h1>Настройки</h1></div><span class="pill">v0.1.12</span></div>
+      <div class="page-head"><div><div class="eyebrow">Приложение</div><h1>Настройки</h1></div><span class="pill">v0.1.13</span></div>
       <section class="card about"><img src="icons/icon-192.png" alt=""><div><h2>KENO 4M</h2><p class="muted">Основной прогноз — Вариант 1. Вариант 2 и Доп. Г/Г служат для поиска полного согласования.</p></div></section>
+      <section class="card"><h2>Сканер</h2><p class="muted">Сканер проверяет только столбы, уже выданные текущим прогнозом. Новые столбы сканер не добавляет. Временная рекомендация строится по историческому бэктесту трёх совпадений: В1+В2+Доп., В1+В2 и В1+Доп.</p></section>
       <section class="card"><h2>Навигация</h2><p class="muted">Переход между страницами работает только нижними кнопками. Свайп между страницами отключён.</p></section>
       <section class="card"><h2>Текущее расписание</h2><div id="scheduleList" class="chips"></div></section>
       <section class="card"><h2>Установка</h2><p class="muted">После публикации GitHub Pages приложение можно установить на главный экран телефона как PWA.</p></section>
@@ -85,5 +98,6 @@
 <script src="engine.js?v=012"></script>
 <script src="today-override.js?v=015"></script>
 <script src="app.js?v=0112"></script>
+<script src="scanner.js?v=0113"></script>
 <script src="navigation.js?v=016"></script>
 </body></html>
