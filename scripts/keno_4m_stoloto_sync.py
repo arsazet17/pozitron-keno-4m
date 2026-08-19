@@ -17,6 +17,9 @@ ARCHIVE_JSON = Path("data/archive.json")
 ARCHIVE_XLSX = Path("data/keno_stolby_po_date_vremeni_16-08-2026.xlsx")
 LAST_SYNC = Path("data/last_sync.json")
 
+# Для каждого запуска проверяем только 10 самых свежих официальных тиражей.
+TAIL_SIZE = 10
+
 SCHEDULE = [
     "00:02","00:17","00:32","01:02","01:17","01:32","02:02","02:17","02:32","03:02","03:32",
     "04:02","04:17","04:32","05:02","05:17","05:32","06:02","06:17","06:32","07:02","07:32",
@@ -156,12 +159,17 @@ async def login(page, email, password):
         pass
     await page.wait_for_timeout(2500)
 
-async def expand_archive(page, target_rows=120):
+async def expand_archive(page, target_rows=TAIL_SIZE):
+    """Гарантирует, что на странице есть минимум target_rows тиражей.
+
+    Для обычной работы Столото уже показывает достаточно свежих строк, поэтому
+    старый архив больше не разворачиваем до 120 записей.
+    """
     last = -1
     stable = 0
-    for _ in range(20):
+    for _ in range(6):
         count = await page.locator("tr").evaluate_all(
-            """els => els.filter(el => /№\\s*\\d{4,}/.test(el.innerText || '')).length"""
+            r"""els => els.filter(el => /№\s*\d{4,}/.test(el.innerText || '')).length"""
         )
         if count >= target_rows:
             break
@@ -173,7 +181,7 @@ async def expand_archive(page, target_rows=120):
             try:
                 if await more.is_visible():
                     await more.click(timeout=5000)
-                    await page.wait_for_timeout(1600)
+                    await page.wait_for_timeout(1200)
                     continue
             except Exception:
                 pass
@@ -183,20 +191,20 @@ async def expand_archive(page, target_rows=120):
             try:
                 if await more_link.is_visible():
                     await more_link.click(timeout=5000)
-                    await page.wait_for_timeout(1600)
+                    await page.wait_for_timeout(1200)
                     continue
             except Exception:
                 pass
 
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        await page.wait_for_timeout(1600)
-        if stable >= 3:
+        await page.wait_for_timeout(1200)
+        if stable >= 2:
             break
 
 async def collect_rows(page):
     await page.goto(ARCHIVE_URL, wait_until="domcontentloaded", timeout=60000)
-    await page.wait_for_timeout(3000)
-    await expand_archive(page, 120)
+    await page.wait_for_timeout(2500)
+    await expand_archive(page, TAIL_SIZE)
 
     raw = await page.locator("body").evaluate(
         """() => {
@@ -267,34 +275,49 @@ def parse_rows(raw_rows):
     uniq = {}
     for d in parsed:
         uniq[d["draw"]] = d
-    return sorted(uniq.values(), key=lambda x: x["draw"])
+
+    # Строго только 10 самых свежих тиражей.
+    rows = sorted(uniq.values(), key=lambda x: x["draw"])
+    return rows[-TAIL_SIZE:]
 
 async def triple_read(page):
     reads = []
     for i in range(3):
         rows = parse_rows(await collect_rows(page))
-        if len(rows) < 20:
-            raise RuntimeError(f"Чтение {i+1}: найдено только {len(rows)} тиражей")
+        if len(rows) < TAIL_SIZE:
+            raise RuntimeError(
+                f"Чтение {i+1}: найдено только {len(rows)} тиражей, нужно {TAIL_SIZE}"
+            )
         reads.append(rows)
-        print(f"Чтение {i+1}: {len(rows)} тиражей, №{rows[0]['draw']}–№{rows[-1]['draw']}")
+        print(
+            f"Чтение {i+1}: последние {len(rows)} тиражей, "
+            f"№{rows[0]['draw']}–№{rows[-1]['draw']}"
+        )
         if i < 2:
-            await page.wait_for_timeout(1200)
+            await page.wait_for_timeout(1000)
 
     maps = [dict((d["draw"], d) for d in arr) for arr in reads]
     common = sorted(set(maps[0]) & set(maps[1]) & set(maps[2]))
-    if len(common) < 20:
-        raise RuntimeError(f"Общих тиражей после тройной проверки только {len(common)}")
+    if len(common) < TAIL_SIZE:
+        raise RuntimeError(
+            f"Последние 10 изменились между проверками: общих тиражей только {len(common)}. "
+            "Безопасно пропускаем этот запуск; следующий cron проверит снова."
+        )
 
     stable = []
-    for draw in common:
+    for draw in common[-TAIL_SIZE:]:
         a, b, c = maps[0][draw], maps[1][draw], maps[2][draw]
         key = lambda d: (d["date"], d["time"], d["column"])
         if key(a) == key(b) == key(c):
             stable.append(a)
-    if len(stable) < 20:
-        raise RuntimeError(f"Стабильных тиражей после тройной проверки только {len(stable)}")
 
-    print(f"Тройная проверка PASS: {len(stable)} стабильных тиражей")
+    if len(stable) < TAIL_SIZE:
+        raise RuntimeError(
+            f"Тройную проверку прошли только {len(stable)} из {TAIL_SIZE} последних тиражей"
+        )
+
+    stable = stable[-TAIL_SIZE:]
+    print(f"Тройная проверка PASS: последние {len(stable)} тиражей совпали 3/3")
     return stable
 
 def load_archive():
@@ -328,8 +351,7 @@ def merge_official(archive, stable):
     rows = archive["rows"]
     hm = header_map(rows)
 
-    # We only consider official rows whose date is present in the current tail,
-    # plus newer dates. This prevents a recent-page parser from touching old history.
+    # Берём только свежий хвост текущей/новой даты.
     archive_dates = [parse_archive_date(r[0]) for r in rows[1:] if r]
     archive_dates = [d for d in archive_dates if d]
     min_date = max(archive_dates) if archive_dates else None
@@ -476,7 +498,7 @@ async def main():
     last = candidates[-1] if candidates else stable[-1]
     info = {
         "updatedAt": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-        "source": "Официальный Столото OAuth · KENO 4M standalone",
+        "source": "Официальный Столото OAuth · KENO 4M standalone · tail10",
         "stableDraws": len(stable),
         "checkedTail": len(candidates),
         "confirmedExisting": confirmed,
@@ -489,7 +511,7 @@ async def main():
         encoding="utf-8",
     )
 
-    print(f"KENO 4M STANDALONE PASS: добавлено {len(added)}, подтверждено {confirmed}.")
+    print(f"KENO 4M TAIL10 PASS: добавлено {len(added)}, подтверждено {confirmed}.")
     print(f"Последний официальный: №{last['draw']} {last['date']} {last['time']} -> столб {last['column']}")
     if added:
         print("Добавлено: " + ", ".join(f"{x['date']} {x['time']}->{x['column']}" for x in added))
