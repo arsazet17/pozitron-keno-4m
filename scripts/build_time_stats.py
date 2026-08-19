@@ -35,15 +35,7 @@ def parse_date(s):
 
 
 class BacktestEngine:
-    """
-    Fast incremental backtest compatible with engine.js.
-
-    Important detail:
-    - source horizontal chain uses current KENO 4M SCHEDULE only;
-    - historical horizontal search uses every non-empty cell in a date row,
-      exactly like engine.js horizontalSequences();
-    - vertical search uses every archive time column.
-    """
+    """Incremental backtest that mirrors STRICT KENO 4M engine rules."""
 
     def __init__(self):
         self.idx_v = {n: defaultdict(list) for n in range(1, 7)}
@@ -57,20 +49,33 @@ class BacktestEngine:
             pattern = tuple(seq_before[-length:])
             index[length][pattern].append((new_value, order))
 
-    def find_method(self, base_chain, orientation, max_len=None):
+    def method_at_len(self, base_chain, orientation, length):
         index = self.idx_v if orientation == "V" else self.idx_h
+        use_len = min(max(int(length or 0), 0), len(base_chain), 6)
+        if use_len < 1:
+            return {
+                "orientation": orientation,
+                "baseChain": list(base_chain),
+                "usedChain": [],
+                "usedLen": 0,
+                "continuations": [],
+            }
+        pattern = tuple(base_chain[-use_len:])
+        items = index[use_len].get(pattern, [])
+        return {
+            "orientation": orientation,
+            "baseChain": list(base_chain),
+            "usedChain": list(pattern),
+            "usedLen": use_len,
+            "continuations": items,
+        }
+
+    def find_method(self, base_chain, orientation, max_len=None):
         cap = min(len(base_chain), 6, len(base_chain) if max_len is None else max_len)
         for length in range(cap, 0, -1):
-            pattern = tuple(base_chain[-length:])
-            items = index[length].get(pattern)
-            if items:
-                return {
-                    "orientation": orientation,
-                    "baseChain": list(base_chain),
-                    "usedChain": list(pattern),
-                    "usedLen": length,
-                    "continuations": items,
-                }
+            method = self.method_at_len(base_chain, orientation, length)
+            if method["continuations"]:
+                return method
         return {
             "orientation": orientation,
             "baseChain": list(base_chain),
@@ -88,22 +93,22 @@ class BacktestEngine:
         return sorted(v for v, n in counts.items() if n == maximum), counts
 
     def variant1(self, methods):
+        # STRICT: method coverage -> raw frequency -> chain strength -> value.
+        # Freshness/recency is intentionally NOT used.
         by = {
             n: {
                 "value": n,
                 "methods": set(),
                 "strength": 0,
-                "freshness": -1,
                 "total": 0,
             }
             for n in range(1, 11)
         }
         for name, method in methods.items():
             seen = set()
-            for value, order in method["continuations"]:
+            for value, _order in method["continuations"]:
                 row = by[value]
                 row["total"] += 1
-                row["freshness"] = max(row["freshness"], order)
                 if value not in seen:
                     seen.add(value)
                     row["methods"].add(name)
@@ -113,14 +118,15 @@ class BacktestEngine:
         ranked.sort(
             key=lambda x: (
                 -len(x["methods"]),
+                -x["total"],
                 -x["strength"],
-                -x["freshness"],
                 x["value"],
             )
         )
         return [x["value"] for x in ranked[:3]]
 
     def variant2(self, specs, initial_methods):
+        # STRICT: on a tie, every active chain shortens by exactly one per round.
         current = dict(initial_methods)
         rounds = 0
         while rounds < 8:
@@ -132,52 +138,36 @@ class BacktestEngine:
             leaders, _ = self.leaders(all_items)
             if len(leaders) == 1:
                 return leaders[0]
-            if not leaders:
+
+            can_shorten = any(m["usedLen"] > 1 for m in current.values())
+            if not can_shorten:
                 return None
 
             next_methods = {}
-            changed = False
             for name, spec in specs.items():
                 cur = current[name]
-                next_max = max(1, (cur["usedLen"] or 1) - 1)
-                if next_max < (cur["usedLen"] or 1):
-                    changed = True
-                next_methods[name] = self.find_method(
-                    spec["chain"], spec["orientation"], next_max
-                )
+                if cur["usedLen"] > 1:
+                    next_methods[name] = self.method_at_len(
+                        spec["chain"], spec["orientation"], cur["usedLen"] - 1
+                    )
+                else:
+                    next_methods[name] = cur
             current = next_methods
             rounds += 1
-
-            if not changed:
-                all_items = [
-                    item
-                    for method in current.values()
-                    for item in method["continuations"]
-                ]
-                leaders, _ = self.leaders(all_items)
-                return leaders[0] if len(leaders) == 1 else None
         return None
 
     def extra_gg(self, h_chain, initial):
+        # STRICT: same exact -1 shortening. Tie at length 1 => no result.
+        # No freshness fallback.
         current = initial
         rounds = 0
         while rounds < 8:
             leaders, _ = self.leaders(current["continuations"])
             if len(leaders) == 1:
                 return leaders[0]
-            if not leaders:
-                return None
             if current["usedLen"] <= 1:
-                best = None
-                for value, order in current["continuations"]:
-                    if value not in leaders:
-                        continue
-                    if best is None or order > best[1]:
-                        best = (value, order)
-                return best[0] if best else None
-            current = self.find_method(
-                h_chain, "H", current["usedLen"] - 1
-            )
+                return None
+            current = self.method_at_len(h_chain, "H", current["usedLen"] - 1)
             rounds += 1
         return None
 
@@ -262,15 +252,8 @@ def build(rows, recent_days=180):
     latest_date = max(parse_date(r[0]) for r in dated_rows)
     cutoff = latest_date - timedelta(days=recent_days - 1)
 
-    by_time = {
-        cat: defaultdict(empty_stat)
-        for cat in CATEGORIES
-    }
-    baseline = {
-        cat: empty_stat()
-        for cat in CATEGORIES
-    }
-
+    by_time = {cat: defaultdict(empty_stat) for cat in CATEGORIES}
+    baseline = {cat: empty_stat() for cat in CATEGORIES}
     engine = BacktestEngine()
 
     for row_index, row in enumerate(rows[1:], start=1):
@@ -304,12 +287,11 @@ def build(rows, recent_days=180):
                         baseline[category]["recent180"][1] += hit
 
             order = row_index * 1000 + col_index
-            engine.add_value(
-                col_index, row_seq, value, order, is_schedule
-            )
+            engine.add_value(col_index, row_seq, value, order, is_schedule)
 
     payload = {
-        "version": 1,
+        "version": 2,
+        "rules": "strict-coverage-frequency-strength-exact-minus-one-no-freshness",
         "generatedAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "latestDate": latest_date.strftime("%d.%m.%y"),
         "recentDays": recent_days,
@@ -356,7 +338,7 @@ def main():
         encoding="utf-8",
     )
     print(
-        f"KENO 4M TIME STATS PASS: {payload['latestDate']} · "
+        f"KENO 4M TIME STATS STRICT PASS: {payload['latestDate']} · "
         f"{len(payload['times'])} времен"
     )
 
