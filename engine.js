@@ -133,13 +133,22 @@
     return out;
   }
 
-  function findMethod(matrix,baseChain,orientation,maxLen){
+  // Строго проверить одну конкретную длину цепочки. Никаких скрытых перескоков.
+  function methodAtLen(matrix,baseChain,orientation,len){
+    const useLen=Math.min(Math.max(Number(len)||0,0),baseChain.length);
+    if(useLen<1) return {orientation,baseChain:baseChain.slice(),usedChain:[],usedLen:0,continuations:[]};
     const seqs=orientation==='V' ? verticalSequences(matrix) : horizontalSequences(matrix);
+    const pattern=baseChain.slice(baseChain.length-useLen);
+    const continuations=matchContinuations(seqs,pattern);
+    return {orientation,baseChain:baseChain.slice(),usedChain:pattern,usedLen:useLen,continuations};
+  }
+
+  // Первичный поиск: 6→5→4… только отрезанием слева до первого совпадения.
+  function findMethod(matrix,baseChain,orientation,maxLen){
     const cap=Math.min(maxLen==null?baseChain.length:maxLen,baseChain.length);
     for(let len=cap;len>=1;len--){
-      const pattern=baseChain.slice(baseChain.length-len);
-      const continuations=matchContinuations(seqs,pattern);
-      if(continuations.length) return {orientation,baseChain:baseChain.slice(),usedChain:pattern,usedLen:len,continuations};
+      const m=methodAtLen(matrix,baseChain,orientation,len);
+      if(m.continuations.length) return m;
     }
     return {orientation,baseChain:baseChain.slice(),usedChain:[],usedLen:0,continuations:[]};
   }
@@ -158,68 +167,81 @@
     return {counts:c,max,leaders:ls.sort((a,b)=>a-b)};
   }
 
-  function freshest(items,candidates){
-    let best=null;
-    for(const x of items){
-      if(!candidates.includes(x.v)) continue;
-      if(!best || x.order>best.order) best=x;
-    }
-    return best ? best.v : null;
-  }
-
+  // В1 строго: охват методов → общая частота → глубина цепочек → номер столба.
+  // Свежесть/давность совпадения запрещена как критерий.
   function variant1(methods){
     const by={};
-    for(let n=1;n<=10;n++) by[n]={value:n,methodSet:new Set(),strength:0,freshness:-1,total:0};
+    for(let n=1;n<=10;n++) by[n]={value:n,methodSet:new Set(),strength:0,total:0};
     for(const [name,m] of Object.entries(methods)){
       const seen=new Set();
       for(const x of m.continuations){
-        const b=by[x.v]; b.total++; b.freshness=Math.max(b.freshness,x.order);
-        if(!seen.has(x.v)){ seen.add(x.v); b.methodSet.add(name); b.strength+=m.usedLen; }
+        const b=by[x.v]; b.total++;
+        if(!seen.has(x.v)){
+          seen.add(x.v);
+          b.methodSet.add(name);
+          b.strength+=m.usedLen;
+        }
       }
     }
     const ranked=Object.values(by).filter(x=>x.methodSet.size).sort((a,b)=>
-      b.methodSet.size-a.methodSet.size || b.strength-a.strength || b.freshness-a.freshness || a.value-b.value
+      b.methodSet.size-a.methodSet.size || b.total-a.total || b.strength-a.strength || a.value-b.value
     );
-    return {values:ranked.slice(0,3).map(x=>x.value), ranked:ranked.map(x=>({value:x.value,coverage:x.methodSet.size,methods:[...x.methodSet],strength:x.strength,freshness:x.freshness,total:x.total}))};
+    return {
+      values:ranked.slice(0,3).map(x=>x.value),
+      ranked:ranked.map(x=>({value:x.value,coverage:x.methodSet.size,methods:[...x.methodSet],total:x.total,strength:x.strength}))
+    };
   }
 
+  // В2: при ничьей каждая активная цепочка сокращается РОВНО на 1 за раунд.
+  // Если на промежуточной длине совпадений нет, следующий раунд продолжает сокращение.
   function variant2(matrix,specs,initialMethods){
     let current={...initialMethods};
     let round=0;
     while(round<8){
       const all=Object.values(current).flatMap(m=>m.continuations);
       const l=leaders(all);
-      if(l.leaders.length===1) return {value:l.leaders[0],counts:Object.fromEntries(l.counts),rounds:round+1,methods:current,tie:false};
-      if(!l.leaders.length) return {value:null,counts:{},rounds:round+1,methods:current,tie:true};
-      const next={}; let changed=false;
+      if(l.leaders.length===1){
+        return {value:l.leaders[0],counts:Object.fromEntries(l.counts),rounds:round+1,methods:current,tie:false};
+      }
+
+      const canShorten=Object.values(current).some(m=>m.usedLen>1);
+      if(!canShorten){
+        return {value:null,counts:Object.fromEntries(l.counts),rounds:round+1,methods:current,tie:true,tied:l.leaders};
+      }
+
+      const next={};
       for(const [name,s] of Object.entries(specs)){
         const cur=current[name];
-        const nextMax=Math.max(1,(cur.usedLen||1)-1);
-        if(nextMax < (cur.usedLen||1)) changed=true;
-        next[name]=findMethod(matrix,s.chain,s.orientation,nextMax);
+        next[name]=cur.usedLen>1
+          ? methodAtLen(matrix,s.chain,s.orientation,cur.usedLen-1)
+          : cur;
       }
-      current=next; round++;
-      if(!changed){
-        const all2=Object.values(current).flatMap(m=>m.continuations);
-        const l2=leaders(all2);
-        return {value:l2.leaders.length===1?l2.leaders[0]:null,counts:Object.fromEntries(l2.counts),rounds:round+1,methods:current,tie:l2.leaders.length!==1,tied:l2.leaders};
-      }
+      current=next;
+      round++;
     }
-    return {value:null,counts:{},rounds:round,methods:current,tie:true};
+
+    const all=Object.values(current).flatMap(m=>m.continuations);
+    const l=leaders(all);
+    return {value:l.leaders.length===1?l.leaders[0]:null,counts:Object.fromEntries(l.counts),rounds:round,methods:current,tie:l.leaders.length!==1,tied:l.leaders};
   }
 
+  // Доп. Г/Г: тот же строгий шаг -1. При ничьей на длине 1 — результата нет.
+  // Свежесть не используется.
   function extraGG(matrix,hChain,initial){
     let cur=initial, round=0;
     while(round<8){
       const l=leaders(cur.continuations);
-      if(l.leaders.length===1) return {value:l.leaders[0],usedChain:cur.usedChain,counts:Object.fromEntries(l.counts),rounds:round+1,tie:false};
-      if(!l.leaders.length) return {value:null,usedChain:cur.usedChain,counts:{},rounds:round+1,tie:true};
-      if(cur.usedLen<=1){
-        return {value:freshest(cur.continuations,l.leaders),usedChain:cur.usedChain,counts:Object.fromEntries(l.counts),rounds:round+1,tie:true,freshnessFallback:true,tied:l.leaders};
+      if(l.leaders.length===1){
+        return {value:l.leaders[0],usedChain:cur.usedChain,counts:Object.fromEntries(l.counts),rounds:round+1,tie:false};
       }
-      cur=findMethod(matrix,hChain,'H',cur.usedLen-1); round++;
+      if(cur.usedLen<=1){
+        return {value:null,usedChain:cur.usedChain,counts:Object.fromEntries(l.counts),rounds:round+1,tie:true,tied:l.leaders};
+      }
+      cur=methodAtLen(matrix,hChain,'H',cur.usedLen-1);
+      round++;
     }
-    return {value:null,usedChain:cur.usedChain,counts:{},rounds:round,tie:true};
+    const l=leaders(cur.continuations);
+    return {value:l.leaders.length===1?l.leaders[0]:null,usedChain:cur.usedChain,counts:Object.fromEntries(l.counts),rounds:round,tie:l.leaders.length!==1,tied:l.leaders};
   }
 
   function predict(matrix,target){
@@ -250,5 +272,5 @@
     return matrix;
   }
 
-  global.KenoEngine={SCHEDULE,val,parseDate,formatDate,nextDate,cloneMatrix,headerMap,ensureDateRow,latestDateRow,nextTarget,verticalChain,horizontalChain,findMethod,variant1,variant2,extraGG,predict,applyOverrides};
+  global.KenoEngine={SCHEDULE,val,parseDate,formatDate,nextDate,cloneMatrix,headerMap,ensureDateRow,latestDateRow,nextTarget,verticalChain,horizontalChain,findMethod,methodAtLen,variant1,variant2,extraGG,predict,applyOverrides};
 })(typeof window!=='undefined'?window:globalThis);

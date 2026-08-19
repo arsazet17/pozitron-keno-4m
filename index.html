@@ -17,7 +17,7 @@
 <div class="shell">
   <header class="topbar">
     <div class="brand"><img src="icons/icon-192.png" alt=""><div><b>KENO 4M</b><span>4 метода · столбы 1–10</span></div></div>
-    <div class="top-actions"><div class="top-meta"><div id="appVersionTop" class="version-badge">v0.1.13</div><div id="archiveStatus" class="status">Загрузка архива…</div></div><button id="forceUpdate" class="update-btn" type="button">⟳ Обновить</button></div>
+    <div class="top-actions"><div class="top-meta"><div id="appVersionTop" class="version-badge">v0.1.14</div><div id="archiveStatus" class="status">Загрузка архива…</div></div><button id="forceUpdate" class="update-btn" type="button">⟳ Обновить</button></div>
   </header>
 
   <main id="pages" class="pages">
@@ -30,13 +30,13 @@
       <section class="card main-forecast">
         <div class="title-row"><div><div class="eyebrow gold">ОСНОВНОЙ ПРОГНОЗ</div><h2>Вариант 1</h2></div><span class="pill">3 столба</span></div>
         <div class="triple" id="v1Balls"></div>
-        <div class="small muted">Главный прогноз — три столба по охвату разных методов.</div>
+        <div class="small muted">Строгий отбор: охват методов → общая частота → глубина цепочек. Свежесть не используется.</div>
         <div id="consensusBox" class="consensus none"><strong>Полного согласования нет</strong></div>
       </section>
 
       <div class="two">
-        <section class="card mini"><div class="eyebrow">Вариант 2</div><div id="v2Value" class="big-number">—</div><div class="small muted">общая частота</div></section>
-        <section class="card mini purple"><div class="eyebrow">Доп. Г/Г</div><div id="ggValue" class="big-number">—</div><div class="small muted">горизонталь → горизонталь</div></section>
+        <section class="card mini"><div class="eyebrow">Вариант 2</div><div id="v2Value" class="big-number">—</div><div class="small muted">частота · при ничьей строго −1 длина</div></section>
+        <section class="card mini purple"><div class="eyebrow">Доп. Г/Г</div><div id="ggValue" class="big-number">—</div><div class="small muted">строго −1 · без свежести</div></section>
       </div>
 
       <section class="card scanner-card">
@@ -77,9 +77,10 @@
     </section>
 
     <section class="page" data-page="settings">
-      <div class="page-head"><div><div class="eyebrow">Приложение</div><h1>Настройки</h1></div><span class="pill">v0.1.13</span></div>
+      <div class="page-head"><div><div class="eyebrow">Приложение</div><h1>Настройки</h1></div><span class="pill">v0.1.14</span></div>
       <section class="card about"><img src="icons/icon-192.png" alt=""><div><h2>KENO 4M</h2><p class="muted">Основной прогноз — Вариант 1. Вариант 2 и Доп. Г/Г служат для поиска полного согласования.</p></div></section>
-      <section class="card"><h2>Сканер</h2><p class="muted">Сканер проверяет только столбы, уже выданные текущим прогнозом. Новые столбы сканер не добавляет. Временная рекомендация строится по историческому бэктесту трёх совпадений: В1+В2+Доп., В1+В2 и В1+Доп.</p></section>
+      <section class="card"><h2>Строгие правила</h2><p class="muted">4 метода считаются только по основному архиву. Первичная цепочка сокращается 6→5→4… только слева до первого совпадения. Вариант 1: охват методов → общая частота → глубина цепочек. Вариант 2 и Доп. Г/Г при ничьей сокращаются ровно на одну длину за раунд. Свежесть и давность совпадений не используются как критерий.</p></section>
+      <section class="card"><h2>Сканер</h2><p class="muted">Сканер проверяет только столбы, уже выданные текущим прогнозом. Новые столбы сканер не добавляет. Временная рекомендация строится по историческому бэктесту тех же строгих правил для трёх совпадений: В1+В2+Доп., В1+В2 и В1+Доп.</p></section>
       <section class="card"><h2>Навигация</h2><p class="muted">Переход между страницами работает только нижними кнопками. Свайп между страницами отключён.</p></section>
       <section class="card"><h2>Текущее расписание</h2><div id="scheduleList" class="chips"></div></section>
       <section class="card"><h2>Установка</h2><p class="muted">После публикации GitHub Pages приложение можно установить на главный экран телефона как PWA.</p></section>
@@ -95,7 +96,7 @@
 </div>
 <div id="toast" class="toast"></div>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="engine.js?v=012"></script>
+<script src="engine.js?v=014"></script>
 <script src="today-override.js?v=015"></script>
 <script src="app.js?v=0112"></script>
 <script src="scanner.js?v=0113"></script>
