@@ -21,7 +21,7 @@
   async function fetchJSON(url,backup){
     const tryOne=async u=>{
       const sep=u.includes('?')?'&':'?';
-      const r=await fetch(`${u}${sep}_v=0112`,{cache:'no-store'});
+      const r=await fetch(`${u}${sep}_v=0115`,{cache:'no-store'});
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const text=await r.text();
       if(/^\s*</.test(text)) throw new Error('получен HTML вместо JSON');
@@ -208,29 +208,96 @@
     return JSON.stringify(rows.slice(-3));
   }
 
+  // Последний реально заполненный официальный слот в archive.json.
+  // Нужен, чтобы экран не смешивал уже новый last_sync.json со ещё старым archive.json
+  // (или наоборот) во время короткого рассинхрона GitHub/Raw CDN.
+  function latestArchiveOfficial(rows){
+    if(!Array.isArray(rows)||rows.length<2)return null;
+    const hm={};
+    (rows[0]||[]).forEach((x,i)=>{if(i>0&&x!=null)hm[String(x)]=i;});
+
+    for(let r=rows.length-1;r>=1;r--){
+      const date=String(rows[r]?.[0]||'');
+      if(!date)continue;
+      for(let i=E.SCHEDULE.length-1;i>=0;i--){
+        const time=E.SCHEDULE[i],c=hm[time];
+        if(c==null)continue;
+        const column=E.val(rows[r]?.[c]);
+        if(column!=null)return {date,time,column};
+      }
+    }
+    return null;
+  }
+
+  function sameOfficial(a,b){
+    if(!a||!b)return false;
+    return String(a.date)===String(b.date)
+      && String(a.time)===String(b.time)
+      && E.val(a.column)===E.val(b.column);
+  }
+
+  function officialKey(meta){
+    const x=meta?.latestOfficial;
+    return x ? `${x.draw??''}|${x.date??''}|${x.time??''}|${x.column??''}` : '';
+  }
+
+  function expectedTargetKey(rows){
+    try{
+      const probe=E.cloneMatrix(rows);
+      E.applyOverrides(probe,loadJSON(LS.overrides,{}));
+      const t=E.nextTarget(probe);
+      return `${t.date}|${t.time}`;
+    }catch(e){
+      console.warn('Не удалось вычислить ожидаемый следующий тираж',e);
+      return '';
+    }
+  }
+
   async function autoRefreshArchive(showToast=false){
     if(autoRefreshBusy || customActive || document.hidden)return;
     autoRefreshBusy=true;
     try{
+      const oldMeta=syncMeta;
+      const oldMetaKey=officialKey(oldMeta);
+      const oldTarget=forecast?.target ? `${forecast.target.date}|${forecast.target.time}` : '';
       const stamp=Date.now();
+
       const j=await fetchJSON(
         `https://raw.githubusercontent.com/arsazet17/pozitron-keno-4m/main/data/archive.json?_auto=${stamp}`,
         `data/archive.json?_auto=${stamp}`
       );
       if(!j||!Array.isArray(j.rows)||j.rows.length<3)throw new Error('AUTO: архив JSON имеет неверный формат');
 
+      // ВАЖНО: читаем last_sync в том же цикле и принимаем пару только целиком.
+      await loadSyncMeta();
+      const newMetaKey=officialKey(syncMeta);
+      const archiveLatest=latestArchiveOfficial(j.rows);
+      const metaLatest=syncMeta?.latestOfficial||null;
+
+      if(metaLatest && !sameOfficial(archiveLatest,metaLatest)){
+        console.warn('KENO 4M AUTO: archive.json и last_sync.json ещё не синхронизированы; ждём следующую проверку',{
+          archive:archiveLatest,
+          lastSync:metaLatest
+        });
+        // Не допускаем состояния «номер уже новый, время ещё старое».
+        syncMeta=oldMeta;
+        return;
+      }
+
       const freshFingerprint=archiveFingerprintOf(j.rows);
       const currentFingerprint=archiveFingerprint || archiveFingerprintOf(baseMatrix);
-      if(freshFingerprint===currentFingerprint){
-        // Даже без нового тиража повторно проверяем восстановление статистики.
-        await loadSyncMeta();
+      const expectedTarget=expectedTargetKey(j.rows);
+      const archiveChanged=freshFingerprint!==currentFingerprint;
+      const metaChanged=newMetaKey!==oldMetaKey;
+      const targetMismatch=!!expectedTarget && expectedTarget!==oldTarget;
+
+      // Если и архив, и мета те же, всё равно проверяем, не завис ли target в памяти.
+      if(!archiveChanged && !metaChanged && !targetMismatch){
         reconcileRecordsFromArchive();
         backfillCompletedForecasts();
         renderStats();
         return;
       }
-
-      const oldTarget=forecast?.target ? `${forecast.target.date}|${forecast.target.time}` : '';
 
       baseMatrix=j.rows;
       matrix=E.cloneMatrix(baseMatrix);
@@ -241,18 +308,16 @@
       $('archiveStatus').classList.remove('error');
 
       // Не оставляем в памяти старый Excel после прихода нового официального результата.
-      // При экспорте workbook будет заново собран из уже свежей matrix.
       xlsxWorkbook=null;
       xlsxSheetName=null;
       if(window.XLSX && $('exportXlsx'))$('exportXlsx').disabled=false;
 
-      await loadSyncMeta();
       reconcileRecordsFromArchive();
       backfillCompletedForecasts();
       compute();
 
       const newTarget=forecast?.target ? `${forecast.target.date}|${forecast.target.time}` : '';
-      if(showToast || oldTarget!==newTarget){
+      if(showToast || oldTarget!==newTarget || metaChanged){
         toast(`Новый тираж получен · следующий ${forecast?.target?.time||'—'}`);
       }
     }catch(e){
@@ -520,11 +585,19 @@
         const had=await removeOldPwaCache();
         if(had){u.searchParams.set('_clean','1');u.searchParams.set('_update',Date.now());location.replace(u.href);return;}
       }
-      await loadArchive();await seedRecords();await loadSyncMeta();reconcileRecordsFromArchive();backfillCompletedForecasts();await loadXlsx();compute();
+      await loadArchive();await seedRecords();await loadSyncMeta();
+      // На старте не показываем смешанную пару «новый номер + старое время».
+      // Если Raw CDN отдал archive.json и last_sync.json разных поколений,
+      // номер временно скрывается, а тихий автоопрос через 1 секунду сам выровняет экран.
+      if(syncMeta?.latestOfficial && !sameOfficial(latestArchiveOfficial(baseMatrix),syncMeta.latestOfficial)){
+        console.warn('KENO 4M START: archive.json и last_sync.json разных поколений; ждём синхронизации');
+        syncMeta=null;
+      }
+      reconcileRecordsFromArchive();backfillCompletedForecasts();await loadXlsx();compute();
       $('saveResult').addEventListener('click',saveResult);$('exportXlsx').addEventListener('click',exportXlsx);$('recalc').addEventListener('click',()=>{reconcileRecordsFromArchive();backfillCompletedForecasts();compute();toast('Пересчитано по текущему архиву')});
       $('importXlsx').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importXlsx(f)});
       startAutoRefresh();
-      // v0.1.12: статистика строится прямо из официального архива и не зависит от localStorage
+      // v0.1.15: синхронизация экрана + статистика строится прямо из официального архива и не зависит от localStorage
       // и сразу после возврата приложения из фона.
       // Service Worker временно отключён до стабилизации запуска на телефоне.
     }catch(e){
