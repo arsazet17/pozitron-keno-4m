@@ -13,7 +13,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
 
     steps:
       - name: Кто запустил
@@ -45,7 +45,7 @@ jobs:
           pip install "playwright==1.54.0" "openpyxl==3.1.5"
           python -m playwright install --with-deps chromium
 
-      - name: Столото OAuth · 3 проверки · обновить KENO 4M
+      - name: Столото OAuth · последние 10 · 3 проверки · обновить KENO 4M
         env:
           STOLOTO_EMAIL: ${{ secrets.STOLOTO_EMAIL }}
           STOLOTO_PASSWORD: ${{ secrets.STOLOTO_PASSWORD }}
