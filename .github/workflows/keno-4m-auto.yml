@@ -14,15 +14,8 @@ jobs:
   update:
     runs-on: ubuntu-latest
 
-    # Playwright-браузеры и системные зависимости уже внутри образа.
-    # Это убирает самый долгий этап: playwright install --with-deps chromium.
-    container:
-      image: mcr.microsoft.com/playwright/python:v1.54.0-noble
-      options: --ipc=host
-
-    # Цель: обычный запуск 2–3 минуты.
-    # 4 минуты — только аварийный потолок, чтобы не рубить нормальный запуск на 3:01.
-    timeout-minutes: 4
+    # Аварийный потолок. Нормальный запуск должен завершаться раньше.
+    timeout-minutes: 5
 
     steps:
       - name: Кто запустил
@@ -43,10 +36,22 @@ jobs:
           git reset --hard origin/main
           echo "WORKING_SHA=$(git rev-parse HEAD)"
 
-      - name: Быстрые Python-зависимости
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Кэш Chromium Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-1.54.0-chromium
+
+      - name: Установить зависимости
         run: |
-          python --version
-          pip install --disable-pip-version-check --no-input             "playwright==1.54.0"             "openpyxl==3.1.5"
+          python -m pip install --disable-pip-version-check --no-input             "playwright==1.54.0"             "openpyxl==3.1.5"
+          python -m playwright install --with-deps chromium
 
       - name: Столото OAuth · последние 10 · 3 проверки · обновить KENO 4M
         env:
