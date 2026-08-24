@@ -50,6 +50,9 @@ jobs:
           python -m pip install --disable-pip-version-check --no-input "playwright==1.54.0" "openpyxl==3.1.5"
           python -m playwright install --with-deps chromium
 
+      - name: Нормализовать archive.json
+        run: python scripts/normalize_archive_json.py
+
       - name: Столото OAuth · последние 10 · 3 проверки · обновить KENO 4M
         env:
           STOLOTO_EMAIL: ${{ secrets.STOLOTO_EMAIL }}
