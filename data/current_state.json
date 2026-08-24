@@ -1,0 +1,137 @@
+{
+  "fact": {
+    "date": "24.08.2026",
+    "time": "20:32",
+    "column": 9
+  },
+  "evaluation": {
+    "methods": [
+      "Г→Г"
+    ],
+    "coverage": 1,
+    "raw_total": 2,
+    "depth": 3,
+    "repeats": [],
+    "V1_hit": false,
+    "main_hit": false,
+    "V2_hit": false,
+    "GG_hit": false,
+    "scanner_hit": false,
+    "matrix_hit": false,
+    "shift_hit": false
+  },
+  "next": {
+    "time": "21:02",
+    "vertical": [
+      3,
+      10,
+      5,
+      2,
+      2,
+      3
+    ],
+    "horizontal": [
+      2,
+      2,
+      9,
+      2,
+      8,
+      9
+    ],
+    "methods": {
+      "В→В": {
+        "usedLen": 3,
+        "chain": [
+          2,
+          2,
+          3
+        ],
+        "raw": [
+          10,
+          10,
+          9,
+          3,
+          4,
+          5,
+          8,
+          3,
+          10,
+          6
+        ]
+      },
+      "В→Г": {
+        "usedLen": 4,
+        "chain": [
+          5,
+          2,
+          2,
+          3
+        ],
+        "raw": [
+          2,
+          10
+        ]
+      },
+      "Г→В": {
+        "usedLen": 5,
+        "chain": [
+          2,
+          9,
+          2,
+          8,
+          9
+        ],
+        "raw": [
+          5
+        ]
+      },
+      "Г→Г": {
+        "usedLen": 4,
+        "chain": [
+          9,
+          2,
+          8,
+          9
+        ],
+        "raw": [
+          1,
+          1
+        ]
+      }
+    },
+    "V1": [
+      10,
+      5,
+      1
+    ],
+    "main": 10,
+    "V2": 10,
+    "GG": 1,
+    "scanner": [
+      10,
+      5,
+      1
+    ],
+    "repeats": {
+      "🔵": 3,
+      "🌸": 2,
+      "🟢": 4,
+      "🟠": 9,
+      "💗": 9,
+      "🔴": 8
+    },
+    "tracked": [
+      [
+        "V1+V2",
+        10
+      ],
+      [
+        "V1+GG",
+        1
+      ]
+    ],
+    "matrix": 10,
+    "shift": 1,
+    "shift_regime": "Продолжение фактического маршрута Г→Г"
+  }
+}
