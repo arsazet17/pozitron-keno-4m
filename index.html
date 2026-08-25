@@ -17,7 +17,7 @@
 <div class="shell">
   <header class="topbar">
     <div class="brand"><img src="icons/icon-192.png" alt=""><div><b>KENO 4M</b><span>4 метода · столбы 1–10</span></div></div>
-    <div class="top-actions"><div class="top-meta"><div id="appVersionTop" class="version-badge">v0.2.2 STRICT</div><div id="archiveStatus" class="status">Загрузка архива…</div></div><button id="forceUpdate" class="update-btn" type="button">⟳ Обновить</button></div>
+    <div class="top-actions"><div class="top-meta"><div id="appVersionTop" class="version-badge">v0.2.3 SERVER</div><div id="archiveStatus" class="status">Загрузка архива…</div></div><button id="forceUpdate" class="update-btn" type="button">⟳ Обновить</button></div>
   </header>
 
   <main id="pages" class="pages">
@@ -44,6 +44,11 @@
         <div id="forecastScanner"><div class="scanner-empty">Ожидаю расчёт прогноза…</div></div>
       </section>
 
+      <section class="card">
+        <div class="title-row"><div><div class="eyebrow">Текущий режим</div><h2>⚡ Последние тиражи</h2></div><span class="pill cyan">12 ФАКТОВ</span></div>
+        <div id="recentRegime"><div class="scanner-empty">Загрузка режима…</div></div>
+      </section>
+
       <section class="card time-card">
         <div class="title-row"><div><div class="eyebrow gold">История попаданий</div><h2>⏱ Рекомендация по времени</h2></div><span class="pill">3 сигнала</span></div>
         <div id="timeAdvice" class="time-advice-list"><div class="scanner-empty">Загрузка временной статистики…</div></div>
@@ -60,7 +65,7 @@
     </section>
 
     <section class="page" data-page="stats">
-      <div class="page-head"><div><div class="eyebrow">Только реально frozen</div><h1>Статистика</h1></div></div>
+      <div class="page-head"><div><div class="eyebrow">Только server frozen</div><h1>Статистика</h1></div></div>
       <section class="card stats-simple-card">
         <div class="stats-simple-head"><span>ТИРАЖ</span><span>ДАТА</span><span>ВРЕМЯ</span><span>ИТОГ</span><span></span></div>
         <div id="dayAccordion" class="day-accordion"></div>
@@ -75,9 +80,10 @@
     </section>
 
     <section class="page" data-page="settings">
-      <div class="page-head"><div><div class="eyebrow">Приложение</div><h1>Настройки</h1></div><span class="pill">v0.2.2 STRICT</span></div>
-      <section class="card about"><img src="icons/icon-192.png" alt=""><div><h2>KENO 4M</h2><p class="muted">Основной прогноз — В1. Повторы, Матрица и Смена алгоритма идут отдельными слоями и не меняют основной прогноз.</p></div></section>
-      <section class="card"><h2>Строгие правила</h2><p class="muted">4 метода считаются только по основному архиву и только по активному расписанию. Поиск L6→L1 сокращением только слева. Сохраняются все продолжения и кратности. В1 всегда ровно 3 столба. Заднее восстановление прогноза запрещено: если frozen до факта не было, результат не считается ни попаданием, ни промахом.</p></section>
+      <div class="page-head"><div><div class="eyebrow">Приложение</div><h1>Настройки</h1></div><span class="pill">v0.2.3 SERVER</span></div>
+      <section class="card about"><img src="icons/icon-192.png" alt=""><div><h2>KENO 4M</h2><p class="muted">Основной прогноз — В1. Повторы, Матрица, режим последних тиражей и Смена алгоритма идут отдельными слоями и не меняют основной прогноз.</p></div></section>
+      <section class="card"><h2>Хранение frozen</h2><p class="muted">Frozen-прогнозы и их проверка хранятся в data/frozen_records.json в репозитории. Телефон не является источником истории прогнозов.</p></section>
+      <section class="card"><h2>Строгие правила</h2><p class="muted">4 метода считаются только по основному архиву и только по активному расписанию. Поиск L6→L1 сокращением только слева. Сохраняются все продолжения и кратности. В1 всегда ровно 3 столба. Заднее восстановление прогноза запрещено: если server frozen до факта не было, результат не считается ни попаданием, ни промахом.</p></section>
       <section class="card"><h2>Сканер</h2><p class="muted">Scanner = 3 V1 + V2, если его нет в V1 + Г→Г, если его нет в V1. Повторы Scanner не расширяют.</p></section>
       <section class="card"><h2>Текущее расписание</h2><div id="scheduleList" class="chips"></div></section>
       <section class="card"><h2>Установка</h2><p class="muted">GitHub Pages / PWA.</p></section>
@@ -97,8 +103,10 @@
 <script src="strict-law.js?v=0200"></script>
 <script src="today-override.js?v=0200"></script>
 <script src="archive-compat.js?v=0202"></script>
+<script src="server-store.js?v=5ed11a9d7c3d"></script>
 <script src="app.js?v=0201"></script>
 <script src="scanner.js?v=0113"></script>
+<script src="regime.js?v=7308b303fb5d"></script>
 <script src="knowledge.js?v=0200"></script>
 <script src="navigation.js?v=016"></script>
 </body></html>
