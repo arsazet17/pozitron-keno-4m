@@ -62,9 +62,15 @@ jobs:
       - name: Пересчитать временную статистику
         run: python scripts/build_time_stats.py
 
+      - name: Серверный frozen следующего тиража
+        run: node scripts/update_frozen_records.js
+
+      - name: Обновить версии JS только при изменении кода
+        run: python scripts/bump_js_versions.py
+
       - name: Сохранить безопасное обновление
         run: |
-          if git diff --quiet -- data/archive.json data/keno_stolby_po_date_vremeni_16-08-2026.xlsx data/last_sync.json data/time_stats.json; then
+          if git diff --quiet -- data/archive.json data/keno_stolby_po_date_vremeni_16-08-2026.xlsx data/last_sync.json data/time_stats.json data/frozen_records.json index.html; then
             echo "Изменений нет"
             exit 0
           fi
@@ -76,6 +82,8 @@ jobs:
           git add data/keno_stolby_po_date_vremeni_16-08-2026.xlsx
           git add data/last_sync.json
           git add data/time_stats.json
+          git add data/frozen_records.json
+          git add index.html
 
-          git commit -m "KENO 4M · Столото автообновление"
+          git commit -m "KENO 4M · Столото + server frozen"
           git push origin main
