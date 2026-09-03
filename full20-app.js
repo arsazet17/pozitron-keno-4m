@@ -17,4 +17,15 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-col]');if(
 function renderMeta(){const m=DATA.meta;$('syncText').textContent='Столото: синхронизировано';$('syncDot').classList.add('ok');$('updatedAt').textContent=m.updatedAt?new Date(m.updatedAt).toLocaleString('ru-RU'):'';$('baseCount').textContent=Number(m.baseDraws||0).toLocaleString('ru-RU');$('retieCount').textContent=Number(m.retieChanged||0).toLocaleString('ru-RU');const d=latest();$('settingsLatest').textContent=d?`${d.date} ${d.time} · ст${d.column}`:'—';$('schedule').innerHTML=SCHEDULE.map(t=>`<span>${t}</span>`).join('')}
 async function loadAll(){try{const [draws,frozen,meta,combos]=await Promise.all([j('data/full20_draws.json'),j('data/full20_frozen.json'),j('data/full20_meta.json'),j('data/full20_combo_view.json')]);DATA={draws,frozen,meta,combos};renderLatest();renderForecast();renderDraws();renderHistory();renderCombos();renderMeta()}catch(e){$('syncText').textContent='Ошибка загрузки данных';toast('Ошибка данных FULL20');console.error(e)}}
 $('auditToggle').onclick=()=> $('auditBox').classList.toggle('open');$('rankingToggle').onclick=()=> $('rankingBox').classList.toggle('open');$('refreshBtn').onclick=()=>{toast('Обновляю…');loadAll()};loadAll();
-if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(()=>{}));
+if('serviceWorker'in navigator)window.addEventListener('load',async()=>{
+ try{
+  const reg=await navigator.serviceWorker.register('./sw.js?v=1.0.3',{updateViaCache:'none'});
+  await reg.update();
+  let reloading=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+   if(reloading)return;
+   reloading=true;
+   location.reload();
+  });
+ }catch(e){console.warn('SW update',e)}
+});
