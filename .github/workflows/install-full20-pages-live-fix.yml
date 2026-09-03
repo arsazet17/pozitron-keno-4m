@@ -1,0 +1,75 @@
+name: INSTALL · FULL20 Pages Live Fix v1.0.3
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: install-full20-pages-live-fix
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Fresh main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Patch Pages + cache update
+        run: python scripts/install_full20_pages_fix.py
+
+      - name: Verify
+        run: |
+          python -m py_compile scripts/install_full20_pages_fix.py
+          node --check full20-app.js
+          grep -q 'v1.0.3' index.html
+          grep -q 'KENO FULL20 · Stoloto AUTO' .github/workflows/pages.yml
+          grep -q "keno-full20-v1.0.3" sw.js
+          grep -q '"start_url": "./?v=1.0.3"' manifest.webmanifest
+
+      - name: Commit after PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html full20-app.js sw.js manifest.webmanifest .github/workflows/pages.yml
+          if ! git diff --cached --quiet; then
+            git commit -m "KENO FULL20 v1.0.3 · live Pages + cache fix"
+            git reset --hard HEAD
+            git clean -fd
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+          fi
+
+      # Deploy immediately from this verified workspace.
+      # Future successful FULL20 AUTO runs will deploy through pages.yml workflow_run.
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
