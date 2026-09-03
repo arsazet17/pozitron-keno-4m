@@ -39,17 +39,35 @@ jobs:
         run: |
           python -m py_compile scripts/full20_stoloto_sync.py scripts/full20_engine.py scripts/full20_selftest.py
           node --check full20-app.js
-          python scripts/full20_selftest.py || true
+          python scripts/full20_selftest.py
       - name: Save official facts and frozen
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- data/full20_draws.json data/full20_sync.json data/full20_model_state.json data/full20_frozen.json data/full20_combo_view.json data/full20_meta.json; then
-            echo 'Изменений нет'; exit 0
-          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # Сначала индексируем только авторитетные FULL20-файлы.
+          # Так проверка видит и новые (untracked) JSON, и изменения существующих.
           git add data/full20_draws.json data/full20_sync.json data/full20_model_state.json data/full20_frozen.json data/full20_combo_view.json data/full20_meta.json
+
+          if git diff --cached --quiet; then
+            echo 'Изменений FULL20 нет'
+            git reset --hard HEAD
+            git clean -fd
+            exit 0
+          fi
+
           git commit -m 'KENO FULL20 · official fact + frozen'
-          git pull --rebase origin main
+
+          # После commit всё нужное уже сохранено. Удаляем только остаточные
+          # файлы/изменения от Python/Playwright/self-test, чтобы rebase не падал.
+          echo 'Рабочее дерево перед очисткой:'
+          git status --short
+          git reset --hard HEAD
+          git clean -fd
+
+          # Не используем pull на грязном дереве: явно fetch + rebase + push.
+          git fetch origin main
+          git rebase origin/main
           git push origin HEAD:main
