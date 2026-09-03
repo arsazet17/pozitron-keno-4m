@@ -1,89 +1,55 @@
-name: KENO 4M · Stoloto AUTO
-
+name: KENO FULL20 · Stoloto AUTO
 on:
   workflow_dispatch:
-
 permissions:
   contents: write
-
 concurrency:
-  group: keno-4m-stoloto-auto
+  group: keno-full20-stoloto-auto
   cancel-in-progress: false
-
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-
+    timeout-minutes: 8
     steps:
-      - name: Кто запустил
-        run: |
-          echo "EVENT=$GITHUB_EVENT_NAME"
-          echo "ACTOR=$GITHUB_ACTOR"
-          echo "RUN=$GITHUB_RUN_ID"
-
-      - name: Получить репозиторий
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: main
-
-      - name: Взять самый свежий main
+      - name: Fresh main
         run: |
           git fetch origin main
           git reset --hard origin/main
-          echo "WORKING_SHA=$(git rev-parse HEAD)"
-
-      - name: Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-
-      - name: Кэш Chromium Playwright
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-1.54.0-chromium
-
-      - name: Установить зависимости
+          python-version: '3.12'
+      - name: Playwright
         run: |
-          python -m pip install --disable-pip-version-check --no-input "playwright==1.54.0" "openpyxl==3.1.5"
+          python -m pip install --disable-pip-version-check --no-input playwright==1.54.0
           python -m playwright install --with-deps chromium
-
-      - name: Нормализовать archive.json
-        run: python scripts/normalize_archive_json.py
-
-      - name: Столото OAuth · последние 10 · 3 проверки · обновить KENO 4M
+      - name: SELFTEST before Stoloto
+        run: python scripts/full20_selftest.py
+      - name: Official Stoloto FULL20 · tail10 · triple check
         env:
           STOLOTO_EMAIL: ${{ secrets.STOLOTO_EMAIL }}
           STOLOTO_PASSWORD: ${{ secrets.STOLOTO_PASSWORD }}
-        run: python scripts/keno_4m_stoloto_sync.py
-
-      - name: Пересчитать временную статистику
-        run: python scripts/build_time_stats.py
-
-      - name: Серверный frozen следующего тиража
-        run: node scripts/update_frozen_records.js
-
-      - name: Обновить версии JS только при изменении кода
-        run: python scripts/bump_js_versions.py
-
-      - name: Сохранить безопасное обновление
+        run: python scripts/full20_stoloto_sync.py
+      - name: FROZEN check → learning → next frozen
+        run: python scripts/full20_engine.py
+      - name: Final checks
         run: |
-          if git diff --quiet -- data/archive.json data/keno_stolby_po_date_vremeni_16-08-2026.xlsx data/last_sync.json data/time_stats.json data/frozen_records.json index.html; then
-            echo "Изменений нет"
-            exit 0
+          python -m py_compile scripts/full20_stoloto_sync.py scripts/full20_engine.py scripts/full20_selftest.py
+          node --check full20-app.js
+          python scripts/full20_selftest.py || true
+      - name: Save official facts and frozen
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- data/full20_draws.json data/full20_sync.json data/full20_model_state.json data/full20_frozen.json data/full20_combo_view.json data/full20_meta.json; then
+            echo 'Изменений нет'; exit 0
           fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add data/archive.json
-          git add data/keno_stolby_po_date_vremeni_16-08-2026.xlsx
-          git add data/last_sync.json
-          git add data/time_stats.json
-          git add data/frozen_records.json
-          git add index.html
-
-          git commit -m "KENO 4M · Столото + server frozen"
-          git push origin main
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/full20_draws.json data/full20_sync.json data/full20_model_state.json data/full20_frozen.json data/full20_combo_view.json data/full20_meta.json
+          git commit -m 'KENO FULL20 · official fact + frozen'
+          git pull --rebase origin main
+          git push origin HEAD:main

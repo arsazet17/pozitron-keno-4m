@@ -1,0 +1,50 @@
+name: INSTALL · KENO FULL20 RETIE
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Fresh main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Remove OLD M4 engine
+        run: |
+          rm -f engine.js strict-law.js today-override.js archive-compat.js server-store.js app.js scanner.js regime.js knowledge.js navigation.js scanner.css PATCH_README.txt
+          rm -f scripts/build_time_stats.py scripts/bump_js_versions.py scripts/update_frozen_records.js scripts/normalize_archive_json.py scripts/keno_4m_stoloto_sync.py
+          rm -f data/archive.json data/current_state.json data/frozen_records.json data/predictions_seed.json data/time_stats.json data/last_sync.json data/keno_stolby_po_date_vremeni_16-08-2026.xlsx
+      - name: Full verification before commit
+        run: |
+          python -m py_compile scripts/full20_engine.py scripts/full20_stoloto_sync.py scripts/full20_selftest.py
+          node --check full20-app.js
+          python scripts/full20_selftest.py
+          python scripts/full20_engine.py
+          grep -q 'KENO FULL20' index.html
+          grep -q 'RETIE' index.html
+          ! grep -q 'engine.js' index.html
+          ! grep -q '4 метода' index.html
+      - name: Commit verified FULL20
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then echo 'Уже установлено'; exit 0; fi
+          git commit -m 'KENO FULL20 v1.0.0 · RETIE · SPECIFICITY'
+          git pull --rebase origin main
+          git push origin HEAD:main
