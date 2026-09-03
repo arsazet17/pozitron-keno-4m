@@ -1,0 +1,71 @@
+name: INSTALL · FULL20 Moscow Time Fix v1.0.3
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: install-full20-moscow-time-fix
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Fresh main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Moscow time + repair imported timestamps
+        run: python scripts/install_full20_moscow_time_fix.py
+
+      - name: Syntax + FULL20 self-test
+        run: |
+          python -m py_compile \
+            scripts/install_full20_moscow_time_fix.py \
+            scripts/full20_stoloto_sync.py \
+            scripts/full20_engine.py \
+            scripts/full20_selftest.py
+          python scripts/full20_selftest.py
+
+      - name: Save only after PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            scripts/full20_stoloto_sync.py \
+            data/full20_draws.json \
+            data/full20_frozen.json \
+            data/full20_model_state.json \
+            data/full20_meta.json \
+            data/full20_sync.json
+
+          if git diff --cached --quiet; then
+            echo "Изменений нет"
+            exit 0
+          fi
+
+          git commit -m "KENO FULL20 · fix Moscow official times"
+          git reset --hard HEAD
+          git clean -fd
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
