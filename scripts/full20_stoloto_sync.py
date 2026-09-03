@@ -108,7 +108,15 @@ async def main():
  email=os.environ.get('STOLOTO_EMAIL');password=os.environ.get('STOLOTO_PASSWORD')
  if not email or not password:raise RuntimeError('Нет STOLOTO_EMAIL/STOLOTO_PASSWORD')
  async with async_playwright() as p:
-  browser=await p.chromium.launch(headless=True);page=await browser.new_page(viewport={'width':1440,'height':1200});await login(page,email,password)
+  browser=await p.chromium.launch(headless=True)
+  context=await browser.new_context(
+   locale='ru-RU',
+   timezone_id='Europe/Moscow',
+   viewport={'width':390,'height':844},
+   user_agent='Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36'
+  )
+  page=await context.new_page()
+  await login(page,email,password)
   reads=[]
   for i in range(3):
    arr=await collect(page)
