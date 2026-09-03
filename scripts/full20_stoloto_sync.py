@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import asyncio,json,os,re
+import asyncio,json,os,re,time
 from collections import Counter
 from pathlib import Path
 from datetime import datetime,date,timezone,timedelta
@@ -13,9 +13,15 @@ STATUS=DATA/'full20_sync.json'
 LOGIN_URL='https://oauth.stoloto.ru/login'
 ARCHIVE_URL='https://m.stoloto.ru/keno2/archive/'
 TAIL=10
+
+# STABLE SYNC:
+# Не роняем AUTO из-за одного пустого/частичного ответа Столото.
+# Принимаем только полное, повторно подтверждённое и не более старое состояние.
 MIN_READS=3
-MAX_READS=7
-READ_DELAY_MS=2000
+MAX_READS=9
+READ_DELAY_MS=2500
+PAGE_READY_TRIES=16
+PAGE_READY_DELAY_MS=500
 
 SCHEDULE={
 '00:02','00:17','00:32','01:02','01:17','01:32','02:02','02:17','02:32',
@@ -88,40 +94,95 @@ def audit(d):
     comp={str(c):pos[c][-1] for c in tied}
     calc=min(tied,key=lambda c:(comp[str(c)],c))
     return {
-        'counts':counts,'max':mx,'tied':tied,'completion':comp,
-        'calculated':calc,'officialMatchesCorrected':calc==d['column']
+        'counts':counts,
+        'max':mx,
+        'tied':tied,
+        'completion':comp,
+        'calculated':calc,
+        'officialMatchesCorrected':calc==d['column']
     }
 
 async def login(page,email,password):
     await page.goto(LOGIN_URL,wait_until='domcontentloaded',timeout=60000)
-    for sel in ['input[type="email"]','input[autocomplete="username"]','input[name*="login" i]','input[type="text"]']:
+
+    # Иногда OAuth уже имеет активную сессию и сам возвращает в приложение.
+    await page.wait_for_timeout(800)
+    if 'oauth.stoloto.ru' not in page.url.lower():
+        return
+
+    login_box=None
+    for sel in [
+        'input[type="email"]',
+        'input[autocomplete="username"]',
+        'input[name*="login" i]',
+        'input[type="text"]'
+    ]:
         loc=page.locator(sel).first
         if await loc.count():
-            await loc.fill(email)
+            login_box=loc
             break
-    else:
-        raise RuntimeError('Не найден логин Stoloto OAuth')
+
+    pass_box=None
     for sel in ['input[type="password"]','input[autocomplete="current-password"]']:
         loc=page.locator(sel).first
         if await loc.count():
-            await loc.fill(password)
+            pass_box=loc
             break
-    else:
-        raise RuntimeError('Не найден пароль Stoloto OAuth')
+
+    if not login_box or not pass_box:
+        # Даём OAuth ещё время на редирект активной сессии.
+        await page.wait_for_timeout(1800)
+        if 'oauth.stoloto.ru' not in page.url.lower():
+            return
+        raise RuntimeError('Не найдены поля Stoloto OAuth')
+
+    await login_box.fill(email)
+    await pass_box.fill(password)
+
     btn=page.get_by_role('button',name=re.compile('войти',re.I)).first
     if not await btn.count():
         btn=page.locator('button[type="submit"]').first
     await btn.click()
     await page.wait_for_timeout(2500)
 
+async def needs_login(page):
+    u=page.url.lower()
+    if 'oauth.stoloto.ru' in u or '/login' in u:
+        return True
+    try:
+        return await page.locator('input[type="password"]').count() > 0
+    except Exception:
+        return False
+
+async def wait_archive_ready(page):
+    # Столото иногда отдаёт DOM раньше, чем дорисован архив.
+    for _ in range(PAGE_READY_TRIES):
+        if await needs_login(page):
+            return False
+        try:
+            body=await page.locator('body').inner_text(timeout=3000)
+        except Exception:
+            body=''
+        if re.search(r'№\s*\d{4,}',body):
+            return True
+        await page.wait_for_timeout(PAGE_READY_DELAY_MS)
+    return False
+
 async def collect(page):
-    await page.goto(ARCHIVE_URL,wait_until='domcontentloaded',timeout=60000)
-    await page.wait_for_timeout(1800)
+    # Cache-bust страницы архива, чтобы не получить временный старый DOM.
+    url=f'{ARCHIVE_URL}?ts={int(time.time()*1000)}'
+    await page.goto(url,wait_until='domcontentloaded',timeout=60000)
+
+    if not await wait_archive_ready(page):
+        # Это НЕ фатальная ошибка: get_stable_tail перечитает страницу.
+        return []
+
     raw=await page.locator('body').evaluate("""() => {
  const norm=s=>String(s||'').replace(/\\u00a0/g,' ').replace(/[ \\t]+/g,' ').trim();
  const drawRx=/№\\s*\\d{4,}/;
  const dateRx=/^(Сегодня|Вчера|\\d{1,2}[.\\/-]\\d{1,2}[.\\/-]\\d{2,4}|\\d{1,2}\\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\\s+\\d{4})?)$/i;
  const all=[...document.querySelectorAll('body *')];
+
  function dateBefore(el){
    let best='';
    for(const n of all){
@@ -133,45 +194,71 @@ async def collect(page):
    }
    return best;
  }
+
  let rows=[...document.querySelectorAll('tr')].filter(el=>drawRx.test(el.innerText||''));
- if(!rows.length)rows=all.filter(el=>{
-   const t=norm(el.innerText);
-   return drawRx.test(t)&&![...el.children].some(ch=>drawRx.test(norm(ch.innerText)));
- });
+ if(!rows.length){
+   rows=all.filter(el=>{
+     const t=norm(el.innerText);
+     return drawRx.test(t)&&![...el.children].some(ch=>drawRx.test(norm(ch.innerText)));
+   });
+ }
+
  return rows.map(el=>{
    const chunks=[];
    const add=n=>{if(n){const t=norm(n.innerText||n.textContent);if(t)chunks.push(t)}};
    add(el);
+
    let p=el.parentElement;
    for(let i=0;p&&i<4;i++,p=p.parentElement){
      add(p);
      if(/столб/i.test(chunks.join(' ')))break;
    }
+
    add(el.previousElementSibling);
    add(el.nextElementSibling);
-   const btn=[...el.querySelectorAll('button')].map(x=>norm(x.innerText||x.textContent));
-   const atoms=[...el.querySelectorAll('[class*="ball" i],[class*="number" i],[class*="win" i]')].map(x=>norm(x.innerText||x.textContent));
-   return {text:norm(el.innerText),context:chunks.join('\\n'),dateLabel:dateBefore(el),buttons:btn,atoms};
+
+   const btn=[...el.querySelectorAll('button')]
+     .map(x=>norm(x.innerText||x.textContent));
+
+   const atoms=[
+     ...el.querySelectorAll('[class*="ball" i],[class*="number" i],[class*="win" i]')
+   ].map(x=>norm(x.innerText||x.textContent));
+
+   return {
+     text:norm(el.innerText),
+     context:chunks.join('\\n'),
+     dateLabel:dateBefore(el),
+     buttons:btn,
+     atoms
+   };
  });
 }""")
+
     out=[]
     carry=''
+
     for row in raw:
         text=norm(row.get('text'))
         draw=parse_draw(text)
         if not draw:
             continue
+
         tm=parse_time(text)
         if not tm or tm not in SCHEDULE:
             continue
+
         if row.get('dateLabel'):
             carry=row['dateLabel']
+
         ds=parse_date_label(row.get('dateLabel') or carry)
         if not ds:
             continue
+
         col=parse_column(row.get('context') or text)
         if not col:
-            raise RuntimeError(f'№{draw}: не найден официальный столб')
+            # Частично дорисованная строка => всё чтение считаем временно плохим.
+            raise RuntimeError(f'№{draw}: временно не найден официальный столб')
+
         balls=[]
         for pool in (row.get('buttons') or [], row.get('atoms') or []):
             nums=[]
@@ -181,19 +268,31 @@ async def collect(page):
             if len(nums)>=20:
                 balls=nums[:20]
                 break
+
         if len(balls)!=20:
-            raise RuntimeError(f'№{draw}: найдено {len(balls)} чисел вместо 20')
+            raise RuntimeError(f'№{draw}: временно найдено {len(balls)} чисел вместо 20')
         if len(set(balls))!=20:
-            raise RuntimeError(f'№{draw}: 20 чисел содержат дубли')
-        d={'draw':draw,'date':ds,'time':tm,'column':col,'balls':balls,
-           'source':'Официальный Столото OAuth · FULL20 tail10'}
+            raise RuntimeError(f'№{draw}: временный DOM содержит дубли')
+
+        d={
+            'draw':draw,
+            'date':ds,
+            'time':tm,
+            'column':col,
+            'balls':balls,
+            'source':'Официальный Столото OAuth · FULL20 stable tail10'
+        }
         d['audit']=audit(d)
+
         if not d['audit']['officialMatchesCorrected']:
+            # Не записываем спорный/недорисованный факт. Повторяем чтение.
             raise RuntimeError(
-                f'№{draw}: официальный столб {col} расходится '
+                f'№{draw}: официальный столб {col} временно расходится '
                 f'с corrected tie-break {d["audit"]["calculated"]}'
             )
+
         out.append(d)
+
     uniq={d['draw']:d for d in out}
     return sorted(uniq.values(),key=lambda d:d['draw'])[-TAIL:]
 
@@ -203,57 +302,105 @@ def snapshot_key(arr):
         for d in arr
     )
 
-async def get_stable_tail(page):
+async def get_stable_tail(page,email,password,known_last_draw):
     snapshots=[]
     keys=[]
     latest_by_key={}
     counts=Counter()
+    bad_reads=0
 
     for i in range(MAX_READS):
-        arr=await collect(page)
-        if len(arr)<TAIL:
-            raise RuntimeError(f'Чтение {i+1}: только {len(arr)} тиражей')
+        try:
+            if await needs_login(page):
+                print(f'Чтение {i+1}: нужна повторная авторизация')
+                await login(page,email,password)
 
-        k=snapshot_key(arr)
-        latest_draw=arr[-1]['draw']
-        snapshots.append(arr)
-        keys.append(k)
-        latest_by_key[k]=latest_draw
-        counts[k]+=1
+            arr=await collect(page)
 
-        print(
-            f'Чтение {i+1}: №{arr[0]["draw"]}–№{arr[-1]["draw"]} '
-            f'(состояние встречено {counts[k]} раз)'
-        )
-
-        if len(keys)>=3 and keys[-1]==keys[-2]==keys[-3]:
-            print(f'Стабилизация PASS 3/3: №{latest_draw}')
-            return arr
-
-        if len(keys)>=MIN_READS:
-            freshest_seen=max(latest_by_key.values())
-            candidates=[
-                key for key,cnt in counts.items()
-                if cnt>=2 and latest_by_key[key]==freshest_seen
-            ]
-            if candidates:
-                chosen=candidates[-1]
-                idx=max(j for j,x in enumerate(keys) if x==chosen)
-                chosen_arr=snapshots[idx]
+            if len(arr)<TAIL:
+                bad_reads+=1
                 print(
-                    'SMART RETRY PASS: самое свежее состояние '
-                    f'№{freshest_seen} подтверждено {counts[chosen]} раз'
+                    f'Чтение {i+1}: неполный архив {len(arr)}/{TAIL} — '
+                    'НЕ ошибка, повторяю'
                 )
-                return chosen_arr
+                if await needs_login(page):
+                    await login(page,email,password)
+                if i<MAX_READS-1:
+                    await page.wait_for_timeout(READ_DELAY_MS)
+                continue
+
+            latest_draw=arr[-1]['draw']
+
+            # Никогда не откатываемся назад относительно уже сохранённого main.
+            if latest_draw < known_last_draw:
+                bad_reads+=1
+                print(
+                    f'Чтение {i+1}: хвост устарел №{latest_draw} < '
+                    f'сохранённого №{known_last_draw} — перечитываю'
+                )
+                if i<MAX_READS-1:
+                    await page.wait_for_timeout(READ_DELAY_MS)
+                continue
+
+            k=snapshot_key(arr)
+            snapshots.append(arr)
+            keys.append(k)
+            latest_by_key[k]=latest_draw
+            counts[k]+=1
+
+            print(
+                f'Чтение {i+1}: №{arr[0]["draw"]}–№{latest_draw} '
+                f'(состояние встречено {counts[k]} раз)'
+            )
+
+            # Строгий классический PASS.
+            if len(keys)>=3 and keys[-1]==keys[-2]==keys[-3]:
+                print(f'STABLE PASS 3/3: №{latest_draw}')
+                return arr
+
+            # При переключении архива принимаем только самое свежее
+            # из всех увиденных состояний, подтверждённое минимум 2 раза.
+            if len(keys)>=2:
+                freshest_seen=max(latest_by_key.values())
+                candidates=[
+                    key for key,cnt in counts.items()
+                    if cnt>=2 and latest_by_key[key]==freshest_seen
+                ]
+                if candidates:
+                    chosen=candidates[-1]
+                    idx=max(j for j,x in enumerate(keys) if x==chosen)
+                    chosen_arr=snapshots[idx]
+                    print(
+                        f'SMART STABLE PASS: №{freshest_seen} '
+                        f'подтверждён {counts[chosen]} раза'
+                    )
+                    return chosen_arr
+
+        except Exception as e:
+            bad_reads+=1
+            print(
+                f'Чтение {i+1}: временный сбой: '
+                f'{type(e).__name__}: {e}'
+            )
+
+            # Если нас выбросило из сессии — восстанавливаем её,
+            # но даже ошибка повторного login не уничтожает старые данные.
+            try:
+                if await needs_login(page):
+                    print('Восстанавливаю Stoloto OAuth сессию')
+                    await login(page,email,password)
+            except Exception as login_err:
+                print(f'Повторный login пока не удался: {login_err}')
 
         if i<MAX_READS-1:
-            print('Архив ещё не стабилен — жду 2 сек и перечитываю')
+            print(f'Жду {READ_DELAY_MS/1000:.1f} сек и перечитываю архив')
             await page.wait_for_timeout(READ_DELAY_MS)
 
-    seen=[arr[-1]['draw'] for arr in snapshots]
+    seen=[arr[-1]['draw'] for arr in snapshots if arr]
     raise RuntimeError(
         f'FULL20 архив не стабилизировался за {MAX_READS} чтений; '
-        f'последние draw по чтениям: {seen}'
+        f'валидные последние draw={seen}; временных плохих чтений={bad_reads}. '
+        'Старые данные НЕ изменены.'
     )
 
 async def main():
@@ -261,6 +408,9 @@ async def main():
     password=os.environ.get('STOLOTO_PASSWORD')
     if not email or not password:
         raise RuntimeError('Нет STOLOTO_EMAIL/STOLOTO_PASSWORD')
+
+    existing=json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else []
+    known_last_draw=max((int(d['draw']) for d in existing),default=0)
 
     async with async_playwright() as p:
         browser=await p.chromium.launch(headless=True)
@@ -271,27 +421,41 @@ async def main():
             user_agent='Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36'
         )
         page=await context.new_page()
+
         await login(page,email,password)
-        official=await get_stable_tail(page)
+        official=await get_stable_tail(
+            page,
+            email,
+            password,
+            known_last_draw
+        )
+
         await browser.close()
 
-    existing=json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else []
+    # Запись происходит ТОЛЬКО после стабильного подтверждения.
     mp={int(d['draw']):d for d in existing}
     for d in official:
         mp[d['draw']]=d
+
     merged=sorted(mp.values(),key=lambda d:int(d['draw']))
-    OUT.write_text(json.dumps(merged,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    OUT.write_text(
+        json.dumps(merged,ensure_ascii=False,indent=2)+'\n',
+        encoding='utf-8'
+    )
+
     STATUS.write_text(
         json.dumps({
             'updatedAt':datetime.now(timezone.utc).isoformat(),
-            'stableDraws':10,
-            'latest':official[-1]
+            'stableDraws':TAIL,
+            'latest':official[-1],
+            'mode':'stable-retry-v1.1'
         },ensure_ascii=False,indent=2)+'\n',
         encoding='utf-8'
     )
+
     print(
-        f'FULL20 STOLOTO PASS: latest №{official[-1]["draw"]}, '
-        f'ст{official[-1]["column"]}, balls=20'
+        f'FULL20 STOLOTO STABLE PASS: latest №{official[-1]["draw"]}, '
+        f'{official[-1]["time"]}, ст{official[-1]["column"]}, balls=20'
     )
 
 if __name__=='__main__':
