@@ -1,54 +1,78 @@
 name: KENO FULL20 · Stoloto AUTO
+
 on:
   workflow_dispatch:
+
 permissions:
   contents: write
+
 concurrency:
   group: keno-full20-stoloto-auto
   cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 8
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: main
+
       - name: Fresh main
         run: |
           git fetch origin main
           git reset --hard origin/main
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Playwright
+          cache: 'pip'
+
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-1.54.0-${{ runner.os }}-v2
+
+      - name: Install Playwright Python
         run: |
           python -m pip install --disable-pip-version-check --no-input playwright==1.54.0
+
+      - name: Install Chromium only on cache miss
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: |
           python -m playwright install --with-deps chromium
+
       - name: SELFTEST before Stoloto
         run: python scripts/full20_selftest.py
-      - name: Official Stoloto FULL20 · tail10 · triple check
+
+      - name: Official Stoloto FULL20 · SMART RETRY
         env:
           STOLOTO_EMAIL: ${{ secrets.STOLOTO_EMAIL }}
           STOLOTO_PASSWORD: ${{ secrets.STOLOTO_PASSWORD }}
         run: python scripts/full20_stoloto_sync.py
+
       - name: FROZEN check → learning → next frozen
         run: python scripts/full20_engine.py
+
       - name: Final checks
         run: |
           python -m py_compile scripts/full20_stoloto_sync.py scripts/full20_engine.py scripts/full20_selftest.py
           node --check full20-app.js
           python scripts/full20_selftest.py
+
       - name: Save official facts and frozen
         shell: bash
         run: |
           set -euo pipefail
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          # Сначала индексируем только авторитетные FULL20-файлы.
-          # Так проверка видит и новые (untracked) JSON, и изменения существующих.
           git add data/full20_draws.json data/full20_sync.json data/full20_model_state.json data/full20_frozen.json data/full20_combo_view.json data/full20_meta.json
 
           if git diff --cached --quiet; then
@@ -59,15 +83,8 @@ jobs:
           fi
 
           git commit -m 'KENO FULL20 · official fact + frozen'
-
-          # После commit всё нужное уже сохранено. Удаляем только остаточные
-          # файлы/изменения от Python/Playwright/self-test, чтобы rebase не падал.
-          echo 'Рабочее дерево перед очисткой:'
-          git status --short
           git reset --hard HEAD
           git clean -fd
-
-          # Не используем pull на грязном дереве: явно fetch + rebase + push.
           git fetch origin main
           git rebase origin/main
           git push origin HEAD:main
