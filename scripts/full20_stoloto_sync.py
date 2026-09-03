@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import asyncio,json,os,re,time
+import asyncio,json,os,re
 from collections import Counter
 from pathlib import Path
 from datetime import datetime,date,timezone,timedelta
@@ -13,15 +13,8 @@ STATUS=DATA/'full20_sync.json'
 LOGIN_URL='https://oauth.stoloto.ru/login'
 ARCHIVE_URL='https://m.stoloto.ru/keno2/archive/'
 TAIL=10
-
-# STABLE SYNC:
-# Не роняем AUTO из-за одного пустого/частичного ответа Столото.
-# Принимаем только полное, повторно подтверждённое и не более старое состояние.
-MIN_READS=3
 MAX_READS=9
 READ_DELAY_MS=2500
-PAGE_READY_TRIES=16
-PAGE_READY_DELAY_MS=500
 
 SCHEDULE={
 '00:02','00:17','00:32','01:02','01:17','01:32','02:02','02:17','02:32',
@@ -54,8 +47,7 @@ def parse_column(t):
         r'(?:^|\s)(10|[1-9])\s*(?:-?й)?\s*столб(?:ец|ца|цу|цом|це)?\b'
     ]:
         m=re.search(rx,s,re.I)
-        if m:
-            return int(m.group(1))
+        if m:return int(m.group(1))
     return None
 
 def parse_date_label(label):
@@ -68,17 +60,14 @@ def parse_date_label(label):
     else:
         m=re.fullmatch(r'(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})',raw)
         if m:
-            y=int(m.group(3))
-            y=y+2000 if y<100 else y
+            y=int(m.group(3)); y=y+2000 if y<100 else y
             d=date(y,int(m.group(2)),int(m.group(1)))
         else:
             m=re.fullmatch(r'(\d{1,2})\s+([а-яё]+)(?:\s+(\d{4}))?',raw)
-            if not m or m.group(2) not in MONTHS:
-                return None
+            if not m or m.group(2) not in MONTHS:return None
             y=int(m.group(3)) if m.group(3) else today.year
             mm=MONTHS[m.group(2)]
-            if not m.group(3) and mm>today.month+6:
-                y-=1
+            if not m.group(3) and mm>today.month+6:y-=1
             d=date(y,mm,int(m.group(1)))
     return d.strftime('%d.%m.%y')
 
@@ -93,24 +82,13 @@ def audit(d):
     tied=[c for c in range(1,11) if counts[str(c)]==mx]
     comp={str(c):pos[c][-1] for c in tied}
     calc=min(tied,key=lambda c:(comp[str(c)],c))
-    return {
-        'counts':counts,
-        'max':mx,
-        'tied':tied,
-        'completion':comp,
-        'calculated':calc,
-        'officialMatchesCorrected':calc==d['column']
-    }
+    return {'counts':counts,'max':mx,'tied':tied,'completion':comp,
+            'calculated':calc,'officialMatchesCorrected':calc==d['column']}
 
+# EXACT working login method from the last successful AUTO.
 async def login(page,email,password):
     await page.goto(LOGIN_URL,wait_until='domcontentloaded',timeout=60000)
 
-    # Иногда OAuth уже имеет активную сессию и сам возвращает в приложение.
-    await page.wait_for_timeout(800)
-    if 'oauth.stoloto.ru' not in page.url.lower():
-        return
-
-    login_box=None
     for sel in [
         'input[type="email"]',
         'input[autocomplete="username"]',
@@ -119,25 +97,18 @@ async def login(page,email,password):
     ]:
         loc=page.locator(sel).first
         if await loc.count():
-            login_box=loc
+            await loc.fill(email)
             break
+    else:
+        raise RuntimeError('Не найден логин Stoloto OAuth')
 
-    pass_box=None
     for sel in ['input[type="password"]','input[autocomplete="current-password"]']:
         loc=page.locator(sel).first
         if await loc.count():
-            pass_box=loc
+            await loc.fill(password)
             break
-
-    if not login_box or not pass_box:
-        # Даём OAuth ещё время на редирект активной сессии.
-        await page.wait_for_timeout(1800)
-        if 'oauth.stoloto.ru' not in page.url.lower():
-            return
-        raise RuntimeError('Не найдены поля Stoloto OAuth')
-
-    await login_box.fill(email)
-    await pass_box.fill(password)
+    else:
+        raise RuntimeError('Не найден пароль Stoloto OAuth')
 
     btn=page.get_by_role('button',name=re.compile('войти',re.I)).first
     if not await btn.count():
@@ -145,36 +116,17 @@ async def login(page,email,password):
     await btn.click()
     await page.wait_for_timeout(2500)
 
-async def needs_login(page):
-    u=page.url.lower()
-    if 'oauth.stoloto.ru' in u or '/login' in u:
-        return True
-    try:
-        return await page.locator('input[type="password"]').count() > 0
-    except Exception:
-        return False
+def auth_url(url):
+    s=str(url or '').lower()
+    return 'oauth.stoloto.ru' in s or '/login' in s
 
-async def wait_archive_ready(page):
-    # Столото иногда отдаёт DOM раньше, чем дорисован архив.
-    for _ in range(PAGE_READY_TRIES):
-        if await needs_login(page):
-            return False
-        try:
-            body=await page.locator('body').inner_text(timeout=3000)
-        except Exception:
-            body=''
-        if re.search(r'№\s*\d{4,}',body):
-            return True
-        await page.wait_for_timeout(PAGE_READY_DELAY_MS)
-    return False
-
+# EXACT working archive URL/navigation from the last successful AUTO.
+# IMPORTANT: NO ?ts query parameter on Stoloto archive page.
 async def collect(page):
-    # Cache-bust страницы архива, чтобы не получить временный старый DOM.
-    url=f'{ARCHIVE_URL}?ts={int(time.time()*1000)}'
-    await page.goto(url,wait_until='domcontentloaded',timeout=60000)
+    await page.goto(ARCHIVE_URL,wait_until='domcontentloaded',timeout=60000)
+    await page.wait_for_timeout(1800)
 
-    if not await wait_archive_ready(page):
-        # Это НЕ фатальная ошибка: get_stable_tail перечитает страницу.
+    if auth_url(page.url):
         return []
 
     raw=await page.locator('body').evaluate("""() => {
@@ -196,33 +148,26 @@ async def collect(page):
  }
 
  let rows=[...document.querySelectorAll('tr')].filter(el=>drawRx.test(el.innerText||''));
- if(!rows.length){
-   rows=all.filter(el=>{
-     const t=norm(el.innerText);
-     return drawRx.test(t)&&![...el.children].some(ch=>drawRx.test(norm(ch.innerText)));
-   });
- }
+ if(!rows.length)rows=all.filter(el=>{
+   const t=norm(el.innerText);
+   return drawRx.test(t)&&![...el.children].some(ch=>drawRx.test(norm(ch.innerText)));
+ });
 
  return rows.map(el=>{
    const chunks=[];
    const add=n=>{if(n){const t=norm(n.innerText||n.textContent);if(t)chunks.push(t)}};
    add(el);
-
    let p=el.parentElement;
    for(let i=0;p&&i<4;i++,p=p.parentElement){
      add(p);
      if(/столб/i.test(chunks.join(' ')))break;
    }
-
    add(el.previousElementSibling);
    add(el.nextElementSibling);
 
-   const btn=[...el.querySelectorAll('button')]
+   const btn=[...el.querySelectorAll('button')].map(x=>norm(x.innerText||x.textContent));
+   const atoms=[...el.querySelectorAll('[class*="ball" i],[class*="number" i],[class*="win" i]')]
      .map(x=>norm(x.innerText||x.textContent));
-
-   const atoms=[
-     ...el.querySelectorAll('[class*="ball" i],[class*="number" i],[class*="win" i]')
-   ].map(x=>norm(x.innerText||x.textContent));
 
    return {
      text:norm(el.innerText),
@@ -236,31 +181,24 @@ async def collect(page):
 
     out=[]
     carry=''
-
     for row in raw:
         text=norm(row.get('text'))
         draw=parse_draw(text)
-        if not draw:
-            continue
+        if not draw:continue
 
         tm=parse_time(text)
-        if not tm or tm not in SCHEDULE:
-            continue
+        if not tm or tm not in SCHEDULE:continue
 
-        if row.get('dateLabel'):
-            carry=row['dateLabel']
-
+        if row.get('dateLabel'):carry=row['dateLabel']
         ds=parse_date_label(row.get('dateLabel') or carry)
-        if not ds:
-            continue
+        if not ds:continue
 
         col=parse_column(row.get('context') or text)
         if not col:
-            # Частично дорисованная строка => всё чтение считаем временно плохим.
-            raise RuntimeError(f'№{draw}: временно не найден официальный столб')
+            raise RuntimeError(f'№{draw}: не найден официальный столб')
 
         balls=[]
-        for pool in (row.get('buttons') or [], row.get('atoms') or []):
+        for pool in (row.get('buttons') or [],row.get('atoms') or []):
             nums=[]
             for x in pool:
                 if re.fullmatch(r'0?([1-9]|[1-7]\d|80)',norm(x)):
@@ -270,27 +208,21 @@ async def collect(page):
                 break
 
         if len(balls)!=20:
-            raise RuntimeError(f'№{draw}: временно найдено {len(balls)} чисел вместо 20')
+            raise RuntimeError(f'№{draw}: найдено {len(balls)} чисел вместо 20')
         if len(set(balls))!=20:
-            raise RuntimeError(f'№{draw}: временный DOM содержит дубли')
+            raise RuntimeError(f'№{draw}: 20 чисел содержат дубли')
 
         d={
-            'draw':draw,
-            'date':ds,
-            'time':tm,
-            'column':col,
-            'balls':balls,
-            'source':'Официальный Столото OAuth · FULL20 stable tail10'
+            'draw':draw,'date':ds,'time':tm,'column':col,'balls':balls,
+            'source':'Официальный Столото OAuth · FULL20 stable-v1.2'
         }
         d['audit']=audit(d)
 
         if not d['audit']['officialMatchesCorrected']:
-            # Не записываем спорный/недорисованный факт. Повторяем чтение.
             raise RuntimeError(
-                f'№{draw}: официальный столб {col} временно расходится '
+                f'№{draw}: официальный столб {col} расходится '
                 f'с corrected tie-break {d["audit"]["calculated"]}'
             )
-
         out.append(d)
 
     uniq={d['draw']:d for d in out}
@@ -307,36 +239,43 @@ async def get_stable_tail(page,email,password,known_last_draw):
     keys=[]
     latest_by_key={}
     counts=Counter()
-    bad_reads=0
+    bad=0
+    zero_streak=0
 
     for i in range(MAX_READS):
         try:
-            if await needs_login(page):
-                print(f'Чтение {i+1}: нужна повторная авторизация')
-                await login(page,email,password)
-
             arr=await collect(page)
 
             if len(arr)<TAIL:
-                bad_reads+=1
-                print(
-                    f'Чтение {i+1}: неполный архив {len(arr)}/{TAIL} — '
-                    'НЕ ошибка, повторяю'
-                )
-                if await needs_login(page):
+                bad+=1
+                zero_streak=zero_streak+1 if not arr else 0
+                print(f'Чтение {i+1}: неполный архив {len(arr)}/{TAIL} — повторяю')
+
+                # If archive redirected us back to OAuth, restore the SAME
+                # known-working login flow and then reopen the plain archive URL.
+                if auth_url(page.url):
+                    print('Архив вернул OAuth — повторный вход')
                     await login(page,email,password)
+
+                # If page returned 0 several times without OAuth redirect,
+                # do a hard new navigation via about:blank, then continue.
+                if zero_streak>=2 and not auth_url(page.url):
+                    print('Два пустых чтения — переоткрываю архив с чистой навигацией')
+                    await page.goto('about:blank')
+                    await page.wait_for_timeout(500)
+
                 if i<MAX_READS-1:
                     await page.wait_for_timeout(READ_DELAY_MS)
                 continue
 
+            zero_streak=0
             latest_draw=arr[-1]['draw']
 
-            # Никогда не откатываемся назад относительно уже сохранённого main.
             if latest_draw < known_last_draw:
-                bad_reads+=1
+                bad+=1
                 print(
-                    f'Чтение {i+1}: хвост устарел №{latest_draw} < '
-                    f'сохранённого №{known_last_draw} — перечитываю'
+                    f'Чтение {i+1}: старый хвост №{latest_draw} < '
+                    f'сохранённого №{known_last_draw} — повторяю'
                 )
                 if i<MAX_READS-1:
                     await page.wait_for_timeout(READ_DELAY_MS)
@@ -349,58 +288,42 @@ async def get_stable_tail(page,email,password,known_last_draw):
             counts[k]+=1
 
             print(
-                f'Чтение {i+1}: №{arr[0]["draw"]}–№{latest_draw} '
-                f'(состояние встречено {counts[k]} раз)'
+                f'Чтение {i+1}: №{arr[0]["draw"]}–№{latest_draw}; '
+                f'подтверждение {counts[k]}'
             )
 
-            # Строгий классический PASS.
             if len(keys)>=3 and keys[-1]==keys[-2]==keys[-3]:
                 print(f'STABLE PASS 3/3: №{latest_draw}')
                 return arr
 
-            # При переключении архива принимаем только самое свежее
-            # из всех увиденных состояний, подтверждённое минимум 2 раза.
-            if len(keys)>=2:
-                freshest_seen=max(latest_by_key.values())
-                candidates=[
-                    key for key,cnt in counts.items()
-                    if cnt>=2 and latest_by_key[key]==freshest_seen
-                ]
-                if candidates:
-                    chosen=candidates[-1]
-                    idx=max(j for j,x in enumerate(keys) if x==chosen)
-                    chosen_arr=snapshots[idx]
-                    print(
-                        f'SMART STABLE PASS: №{freshest_seen} '
-                        f'подтверждён {counts[chosen]} раза'
-                    )
-                    return chosen_arr
+            freshest=max(latest_by_key.values())
+            candidates=[
+                key for key,cnt in counts.items()
+                if cnt>=2 and latest_by_key[key]==freshest
+            ]
+            if candidates:
+                chosen=candidates[-1]
+                idx=max(j for j,x in enumerate(keys) if x==chosen)
+                print(f'SMART PASS 2/2: свежее состояние №{freshest}')
+                return snapshots[idx]
 
         except Exception as e:
-            bad_reads+=1
-            print(
-                f'Чтение {i+1}: временный сбой: '
-                f'{type(e).__name__}: {e}'
-            )
-
-            # Если нас выбросило из сессии — восстанавливаем её,
-            # но даже ошибка повторного login не уничтожает старые данные.
+            bad+=1
+            print(f'Чтение {i+1}: временный сбой {type(e).__name__}: {e}')
             try:
-                if await needs_login(page):
-                    print('Восстанавливаю Stoloto OAuth сессию')
+                if auth_url(page.url):
+                    print('После сбоя страница на OAuth — восстанавливаю вход')
                     await login(page,email,password)
-            except Exception as login_err:
-                print(f'Повторный login пока не удался: {login_err}')
+            except Exception as le:
+                print(f'Повторный OAuth пока не удался: {le}')
 
         if i<MAX_READS-1:
-            print(f'Жду {READ_DELAY_MS/1000:.1f} сек и перечитываю архив')
             await page.wait_for_timeout(READ_DELAY_MS)
 
-    seen=[arr[-1]['draw'] for arr in snapshots if arr]
+    seen=[a[-1]['draw'] for a in snapshots if a]
     raise RuntimeError(
-        f'FULL20 архив не стабилизировался за {MAX_READS} чтений; '
-        f'валидные последние draw={seen}; временных плохих чтений={bad_reads}. '
-        'Старые данные НЕ изменены.'
+        f'FULL20 не стабилизирован за {MAX_READS} чтений; '
+        f'валидные latest={seen}; bad={bad}. Старые данные не изменены.'
     )
 
 async def main():
@@ -422,17 +345,12 @@ async def main():
         )
         page=await context.new_page()
 
+        # EXACT same initial login as the successful #3889.
         await login(page,email,password)
-        official=await get_stable_tail(
-            page,
-            email,
-            password,
-            known_last_draw
-        )
-
+        official=await get_stable_tail(page,email,password,known_last_draw)
         await browser.close()
 
-    # Запись происходит ТОЛЬКО после стабильного подтверждения.
+    # No write happens before stable confirmation.
     mp={int(d['draw']):d for d in existing}
     for d in official:
         mp[d['draw']]=d
@@ -442,20 +360,18 @@ async def main():
         json.dumps(merged,ensure_ascii=False,indent=2)+'\n',
         encoding='utf-8'
     )
-
     STATUS.write_text(
         json.dumps({
             'updatedAt':datetime.now(timezone.utc).isoformat(),
             'stableDraws':TAIL,
             'latest':official[-1],
-            'mode':'stable-retry-v1.1'
+            'mode':'working-login-plus-stable-retry-v1.2'
         },ensure_ascii=False,indent=2)+'\n',
         encoding='utf-8'
     )
-
     print(
-        f'FULL20 STOLOTO STABLE PASS: latest №{official[-1]["draw"]}, '
-        f'{official[-1]["time"]}, ст{official[-1]["column"]}, balls=20'
+        f'FULL20 STOLOTO PASS v1.2: №{official[-1]["draw"]} '
+        f'{official[-1]["time"]} ст{official[-1]["column"]}'
     )
 
 if __name__=='__main__':
