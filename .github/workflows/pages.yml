@@ -1,11 +1,11 @@
-name: Deploy KENO 4M to Pages
+name: Deploy KENO FULL20 to Pages
 
 on:
   push:
     branches: ["main"]
   workflow_dispatch:
   workflow_run:
-    workflows: ["KENO 4M · Stoloto AUTO"]
+    workflows: ["KENO FULL20 · Stoloto AUTO"]
     types: [completed]
 
 permissions:
