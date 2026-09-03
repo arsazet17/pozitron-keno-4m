@@ -1,9 +1,9 @@
 name: Deploy KENO FULL20 to Pages
 
 on:
+  workflow_dispatch:
   push:
     branches: ["main"]
-  workflow_dispatch:
   workflow_run:
     workflows: ["KENO FULL20 · Stoloto AUTO"]
     types: [completed]
@@ -14,22 +14,39 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: full20-pages
   cancel-in-progress: true
 
 jobs:
   deploy:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
 
     steps:
       - name: Получить самый свежий main
         uses: actions/checkout@v4
         with:
           ref: main
+
+      - name: Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Even if AUTO VERSION bot commit did not trigger another workflow,
+      # the Pages artifact itself ALWAYS receives fresh technical hashes.
+      - name: Освежить M5M-style версии перед публикацией
+        run: node refresh-asset-versions.mjs
+
+      - name: Проверить
+        run: |
+          node --check full20-app.js
+          node --check sw.js
+          grep -Eq 'full20-app\.js\?v=[0-9a-f]{12}' index.html
+          grep -Eq 'sw\.js\?v=[0-9a-f]{12}' index.html
 
       - uses: actions/configure-pages@v5
 

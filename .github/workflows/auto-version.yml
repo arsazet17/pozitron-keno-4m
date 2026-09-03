@@ -1,0 +1,98 @@
+name: App · AUTO VERSION FULL20
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "index.html"
+      - "full20-app.js"
+      - "style.css"
+      - "sw.js"
+      - "manifest.webmanifest"
+      - "refresh-asset-versions.mjs"
+      - ".github/workflows/auto-version.yml"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: full20-auto-version
+  cancel-in-progress: true
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Получить main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: M5M-style asset hashes
+        run: node refresh-asset-versions.mjs
+
+      - name: Проверить сборку
+        run: |
+          node --check full20-app.js
+          node --check sw.js
+          node --check refresh-asset-versions.mjs
+          grep -Eq 'full20-app\.js\?v=[0-9a-f]{12}' index.html
+          grep -Eq 'style\.css\?v=[0-9a-f]{12}' index.html
+          grep -Eq 'sw\.js\?v=[0-9a-f]{12}' index.html
+          grep -Eq "keno-full20-shell-[0-9a-f]{12}" sw.js
+
+      - name: Сохранить технические версии
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add index.html sw.js manifest.webmanifest
+
+          if ! git diff --cached --quiet; then
+            git commit -m "AUTO VERSION · FULL20 asset hashes"
+
+            for attempt in 1 2 3; do
+              if git push origin HEAD:main; then
+                echo "AUTO VERSION PASS"
+                break
+              fi
+
+              if [ "$attempt" -eq 3 ]; then
+                echo "AUTO VERSION FAIL"
+                exit 1
+              fi
+
+              git fetch origin main
+              git rebase origin/main
+            done
+          else
+            echo "Технические версии уже актуальны"
+          fi
+
+      # Deploy THIS verified workspace immediately.
+      # We do not wait for a second workflow to be triggered by bot push.
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
