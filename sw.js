@@ -1,4 +1,4 @@
-const CACHE='keno-full20-shell-000000000000';
+const CACHE='keno-full20-shell-2b246eaf0a5e';
 
 const ASSETS=[
   './',

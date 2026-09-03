@@ -10,10 +10,10 @@
 <meta name="color-scheme" content="dark">
 <title>KENO FULL20 v1.0.5</title>
 <meta name="description" content="KENO FULL20 · RETIE · SPECIFICITY">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="manifest" href="manifest.webmanifest?v=7b91d5bbb7f8">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2a5d934687b5">
 </head>
 <body>
 <div class="shell">
@@ -61,7 +61,7 @@
 </div>
 <div id="toast" class="toast"></div>
 
-<script src="full20-app.js"></script>
+<script src="full20-app.js?v=1f0acc525e86"></script>
 
 <!-- M5M-style Service Worker lifecycle -->
 <script id="full20-sw-controller">
@@ -87,7 +87,7 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
       const reg = await navigator.serviceWorker.register(
-        './sw.js',
+        './sw.js?v=0a2a9b8f575c',
         { updateViaCache: 'none' }
       );
       await reg.update();
