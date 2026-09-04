@@ -1,0 +1,60 @@
+name: INSTALL · FULL20 v1.0.6 History Actual Column
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: install-full20-v106-history-column
+  cancel-in-progress: true
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fresh main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install history actual column
+        run: node install-full20-v106-history-column.cjs
+
+      - name: Diff
+        run: git diff -- full20-app.js index.html sw.js manifest.webmanifest
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          git add full20-app.js index.html sw.js manifest.webmanifest
+
+          if git diff --cached --quiet; then
+            echo 'Изменений нет'
+            exit 0
+          fi
+
+          git commit -m 'KENO FULL20 v1.0.6 · actual column in history'
+
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
