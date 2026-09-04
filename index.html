@@ -8,9 +8,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#071425">
 <meta name="color-scheme" content="dark">
-<title>KENO FULL20 v1.0.5</title>
+<title>KENO FULL20 v1.0.6</title>
 <meta name="description" content="KENO FULL20 · RETIE · SPECIFICITY">
-<link rel="manifest" href="manifest.webmanifest?v=7b91d5bbb7f8">
+<link rel="manifest" href="manifest.webmanifest?v=5ec284736034">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="style.css?v=2a5d934687b5">
@@ -19,7 +19,7 @@
 <div class="shell">
 <header class="topbar">
   <div class="brand"><img src="icons/icon-192.png" alt=""><div><b>KENO FULL20</b><span>RETIE · SPECIFICITY</span></div></div>
-  <div class="top-actions"><div class="version">v1.0.5</div><button id="refreshBtn" class="iconbtn">⟳</button></div>
+  <div class="top-actions"><div class="version">v1.0.6</div><button id="refreshBtn" class="iconbtn">⟳</button></div>
 </header>
 <main class="pages">
 <section class="page active" data-page="home">
@@ -40,7 +40,7 @@
 <section class="page" data-page="settings">
   <div class="pagehead"><div><div class="eyebrow">FULL20</div><h1>Настройки</h1></div></div>
   <section class="card"><div class="settings-grid">
-    <div><span>Версия</span><b>v1.0.5</b></div>
+    <div><span>Версия</span><b>v1.0.6</b></div>
     <div><span>База RETIE</span><b id="baseCount">—</b></div>
     <div><span>Изменено tie-break</span><b id="retieCount">—</b></div>
     <div><span>Последний факт</span><b id="settingsLatest">—</b></div>
@@ -61,7 +61,7 @@
 </div>
 <div id="toast" class="toast"></div>
 
-<script src="full20-app.js?v=1f0acc525e86"></script>
+<script src="full20-app.js?v=8d917671f490"></script>
 
 <!-- M5M-style Service Worker lifecycle -->
 <script id="full20-sw-controller">
@@ -87,7 +87,7 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
       const reg = await navigator.serviceWorker.register(
-        './sw.js?v=0a2a9b8f575c',
+        './sw.js?v=08eb1dec1497',
         { updateViaCache: 'none' }
       );
       await reg.update();

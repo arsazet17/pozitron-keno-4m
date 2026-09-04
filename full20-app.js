@@ -102,7 +102,7 @@ function renderHistory(){
     return `<details class="hist-card">
       <summary>
         <div>
-          <div class="dh-title">№${r.target.draw} · ${r.target.time}</div>
+          <div class="dh-title">№${r.target.draw} · ${r.target.time} · ст${r.actual?.column??'—'}</div>
           <div class="dh-meta">Факт: ст${r.actual?.column??'—'} · ранг ${r.actualRank??'—'}${totalPrize?` · 🔥 ${rub(totalPrize)}`:''}</div>
         </div>
         <div class="histstatus ${cl}">${txt}</div>
