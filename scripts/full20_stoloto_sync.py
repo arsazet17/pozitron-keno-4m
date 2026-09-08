@@ -15,6 +15,7 @@ ARCHIVE_URL='https://m.stoloto.ru/keno2/archive/'
 TAIL=10
 MAX_READS=9
 READ_DELAY_MS=2500
+ARCHIVE_LOAD_TIMEOUT_MS=8000
 
 SCHEDULE={
 '00:02','00:17','00:32','01:02','01:17','01:32','02:02','02:17','02:32',
@@ -127,6 +128,16 @@ async def collect(page):
     await page.wait_for_timeout(1800)
 
     if auth_url(page.url):
+        return []
+
+    # The archive is hydrated asynchronously. A fixed sleep can observe the
+    # empty application shell on a slow response, so wait for a draw marker.
+    try:
+        await page.wait_for_function(
+            r"""() => /№\s*\d{4,}/.test(document.body?.innerText || '')""",
+            timeout=ARCHIVE_LOAD_TIMEOUT_MS
+        )
+    except Exception:
         return []
 
     raw=await page.locator('body').evaluate("""() => {
@@ -257,12 +268,14 @@ async def get_stable_tail(page,email,password,known_last_draw):
                     print('Архив вернул OAuth — повторный вход')
                     await login(page,email,password)
 
-                # If page returned 0 several times without OAuth redirect,
-                # do a hard new navigation via about:blank, then continue.
+                # Stoloto may return an empty application shell instead of
+                # redirecting an expired session to OAuth. Renew the session
+                # after two such responses so retries do not reuse bad cookies.
                 if zero_streak>=2 and not auth_url(page.url):
-                    print('Два пустых чтения — переоткрываю архив с чистой навигацией')
-                    await page.goto('about:blank')
-                    await page.wait_for_timeout(500)
+                    print('Два пустых чтения — обновляю OAuth-сессию')
+                    await page.context.clear_cookies()
+                    await login(page,email,password)
+                    zero_streak=0
 
                 if i<MAX_READS-1:
                     await page.wait_for_timeout(READ_DELAY_MS)
