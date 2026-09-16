@@ -115,7 +115,7 @@ async def collect(page):
         await page.wait_for_function(r"""() => /№\s*\d{4,}/.test(document.body?.innerText || '')""",timeout=ARCHIVE_LOAD_TIMEOUT_MS)
     except Exception:
         return []
-    raw=await page.locator('body').evaluate("""() => {
+    raw=await page.locator('body').evaluate(r"""() => {
  const norm=s=>String(s||'').replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').trim();
  const drawRx=/№\s*\d{4,}/;
  const dateRx=/^(Сегодня|Вчера|\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}|\d{1,2}\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+\d{4})?)$/i;
