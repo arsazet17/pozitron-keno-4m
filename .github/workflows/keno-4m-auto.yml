@@ -2,6 +2,10 @@ name: KENO FULL20 · Stoloto AUTO
 
 on:
   workflow_dispatch:
+  schedule:
+    # Poll frequently; the sync is idempotent and commits only when facts change.
+    # This avoids depending on an external dispatcher and catches delayed publication.
+    - cron: '*/5 * * * *'
 
 permissions:
   contents: write
@@ -49,18 +53,18 @@ jobs:
       - name: SELFTEST before Stoloto
         run: python scripts/full20_selftest.py
 
-      - name: Official Stoloto FULL20 · SMART RETRY
+      - name: Official Stoloto FULL20 · LIVE SMART RETRY
         env:
           STOLOTO_EMAIL: ${{ secrets.STOLOTO_EMAIL }}
           STOLOTO_PASSWORD: ${{ secrets.STOLOTO_PASSWORD }}
-        run: python scripts/full20_stoloto_sync.py
+        run: python scripts/full20_live.py
 
       - name: FROZEN check → learning → next frozen
         run: python scripts/full20_engine.py
 
       - name: Final checks
         run: |
-          python -m py_compile scripts/full20_stoloto_sync.py scripts/full20_engine.py scripts/full20_selftest.py
+          python -m py_compile scripts/full20_stoloto_sync.py scripts/full20_live.py scripts/full20_engine.py scripts/full20_selftest.py
           node --check full20-app.js
           python scripts/full20_selftest.py
 
