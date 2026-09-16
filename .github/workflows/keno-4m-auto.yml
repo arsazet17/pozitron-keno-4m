@@ -13,7 +13,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -49,11 +49,30 @@ jobs:
       - name: SELFTEST before Stoloto
         run: python scripts/full20_selftest.py
 
-      - name: Official Stoloto FULL20 · SMART RETRY
+      - name: Official Stoloto FULL20 · M5M-style retry
         env:
           STOLOTO_EMAIL: ${{ secrets.STOLOTO_EMAIL }}
           STOLOTO_PASSWORD: ${{ secrets.STOLOTO_PASSWORD }}
-        run: python scripts/full20_stoloto_sync.py
+        shell: bash
+        run: |
+          set -u
+          success=0
+          for attempt in 1 2 3 4 5 6; do
+            echo "FULL20 Stoloto attempt $attempt/6"
+            if python scripts/full20_stoloto_sync.py; then
+              success=1
+              break
+            fi
+            echo "Reader failed or target not published yet; retry is allowed."
+            if [ "$attempt" -lt 6 ]; then
+              echo "Retry in 25 sec..."
+              sleep 25
+            fi
+          done
+          if [ "$success" -ne 1 ]; then
+            echo "::error::FULL20 could not catch the official draw after 6 attempts."
+            exit 1
+          fi
 
       - name: FROZEN check → learning → next frozen
         run: python scripts/full20_engine.py
