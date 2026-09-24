@@ -1,10 +1,11 @@
-const CACHE='keno-full20-shell-ff2699212b2c';
+const CACHE='keno-full20-shell-live107';
 
 const ASSETS=[
   './',
   './index.html',
   './style.css',
   './full20-app.js',
+  './full20-live-refresh.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png'
