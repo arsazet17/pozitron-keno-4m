@@ -4,6 +4,7 @@
   // FULL20 v1.0.7 — активное автообновление экрана без постоянной перерисовки.
   // Данные остаются официальными серверными JSON из GitHub main.
   const POLL_MS = 8000;
+  const RAW_META = 'https://raw.githubusercontent.com/arsazet17/pozitron-keno-4m/main/data/full20_meta.json';
   let probing = false;
   let lastRemoteSignature = '';
 
@@ -24,13 +25,28 @@
     return document.querySelector('.page.active')?.dataset?.page || 'home';
   }
 
+  async function fetchRemoteMeta(){
+    const u = new URL(RAW_META);
+    u.searchParams.set('ts', String(Date.now()));
+    const r = await fetch(u.href, {
+      method:'GET',
+      cache:'no-store',
+      mode:'cors',
+      credentials:'omit'
+    });
+    if(!r.ok) throw new Error(`FULL20 META HTTP ${r.status}`);
+    return r.json();
+  }
+
   async function probe(reason='timer', force=false){
     if(probing) return;
     if(document.hidden && !force) return;
     probing = true;
 
     try{
-      const meta = await j('data/full20_meta.json');
+      // Для мобильного Chrome здесь намеренно нет нестандартных request headers:
+      // обычный GET не создаёт лишний CORS preflight.
+      const meta = await fetchRemoteMeta();
       const remoteSig = remoteSignature(meta);
       const localSig = localSignature();
 
