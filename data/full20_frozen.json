@@ -999198,7 +999198,10 @@
           "size": 5,
           "support": 9,
           "all": 22,
-          "specificity": 0.4090909090909091
+          "specificity": 0.4090909090909091,
+          "columnHit": false,
+          "comboHits": 0,
+          "comboHitNumbers": []
         },
         {
           "label": "В2",
@@ -999214,7 +999217,12 @@
           "size": 5,
           "support": 9,
           "all": 20,
-          "specificity": 0.45
+          "specificity": 0.45,
+          "columnHit": false,
+          "comboHits": 1,
+          "comboHitNumbers": [
+            77
+          ]
         },
         {
           "label": "В3",
@@ -999230,7 +999238,13 @@
           "size": 5,
           "support": 10,
           "all": 21,
-          "specificity": 0.47619047619047616
+          "specificity": 0.47619047619047616,
+          "columnHit": false,
+          "comboHits": 2,
+          "comboHitNumbers": [
+            47,
+            52
+          ]
         },
         {
           "label": "R1",
@@ -999246,7 +999260,10 @@
           "size": 5,
           "support": 9,
           "all": 19,
-          "specificity": 0.47368421052631576
+          "specificity": 0.47368421052631576,
+          "columnHit": true,
+          "comboHits": 0,
+          "comboHitNumbers": []
         },
         {
           "label": "R2",
@@ -999262,7 +999279,12 @@
           "size": 5,
           "support": 10,
           "all": 24,
-          "specificity": 0.4166666666666667
+          "specificity": 0.4166666666666667,
+          "columnHit": false,
+          "comboHits": 1,
+          "comboHitNumbers": [
+            52
+          ]
         }
       ],
       "ranking": [
@@ -999305,6 +999327,192 @@
         [
           3,
           11646
+        ]
+      ],
+      "frozen": true,
+      "closed": true,
+      "actual": {
+        "column": 7,
+        "draw": 331515,
+        "balls": [
+          47,
+          7,
+          40,
+          1,
+          58,
+          3,
+          13,
+          27,
+          33,
+          77,
+          39,
+          35,
+          6,
+          74,
+          2,
+          52,
+          68,
+          5,
+          72,
+          38
+        ],
+        "audit": {
+          "counts": {
+            "1": 1,
+            "2": 3,
+            "3": 3,
+            "4": 1,
+            "5": 2,
+            "6": 1,
+            "7": 4,
+            "8": 3,
+            "9": 1,
+            "10": 1
+          },
+          "max": 4,
+          "tied": [
+            7
+          ],
+          "completion": {
+            "7": 10
+          },
+          "calculated": 7,
+          "officialMatchesCorrected": true
+        }
+      },
+      "actualRank": 4,
+      "classification": "reserve-hit"
+    },
+    {
+      "target": {
+        "draw": 331516,
+        "date": "14.11.26",
+        "time": "09:02"
+      },
+      "createdAfterDraw": 331515,
+      "createdAt": "2026-11-14T05:36:55.707590+00:00",
+      "options": [
+        {
+          "label": "В1",
+          "column": 2,
+          "score": 16204,
+          "combo": [
+            28,
+            30,
+            36,
+            51,
+            73
+          ],
+          "size": 5,
+          "support": 9,
+          "all": 25,
+          "specificity": 0.36
+        },
+        {
+          "label": "В2",
+          "column": 7,
+          "score": 15488,
+          "combo": [
+            16,
+            28,
+            32,
+            49,
+            65
+          ],
+          "size": 5,
+          "support": 9,
+          "all": 19,
+          "specificity": 0.47368421052631576
+        },
+        {
+          "label": "В3",
+          "column": 6,
+          "score": 15301,
+          "combo": [
+            20,
+            47,
+            51,
+            52,
+            73
+          ],
+          "size": 5,
+          "support": 10,
+          "all": 21,
+          "specificity": 0.47619047619047616
+        },
+        {
+          "label": "R1",
+          "column": 9,
+          "score": 13563,
+          "combo": [
+            17,
+            28,
+            32,
+            56,
+            71
+          ],
+          "size": 5,
+          "support": 10,
+          "all": 22,
+          "specificity": 0.45454545454545453
+        },
+        {
+          "label": "R2",
+          "column": 8,
+          "score": 13280,
+          "combo": [
+            14,
+            34,
+            50,
+            76,
+            77
+          ],
+          "size": 5,
+          "support": 9,
+          "all": 20,
+          "specificity": 0.45
+        }
+      ],
+      "ranking": [
+        [
+          2,
+          16204
+        ],
+        [
+          7,
+          15488
+        ],
+        [
+          6,
+          15301
+        ],
+        [
+          9,
+          13563
+        ],
+        [
+          8,
+          13280
+        ],
+        [
+          10,
+          12891
+        ],
+        [
+          1,
+          12219
+        ],
+        [
+          5,
+          11868
+        ],
+        [
+          4,
+          11462
+        ],
+        [
+          3,
+          10880
         ]
       ],
       "frozen": true,
